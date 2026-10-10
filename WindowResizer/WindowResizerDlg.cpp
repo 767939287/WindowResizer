@@ -251,25 +251,32 @@ void CWindowResizerDlg::UpdateDpiInfoShow()
 void CWindowResizerDlg::CreateDynamicControls()
 {
 	CRect rc;
+	CFont* pFont = GetFont();   //对话框字体，动态创建的控件需手动继承，否则字体大小不一致
 
 	//“当前缩放”提示，放在“设置大小”分组框右上角
 	rc.SetRect(104, 89, 166, 98);
 	MapDialogRect(&rc);
 	m_staticDpiInfo.Create(_T("当前缩放: --"),
 		WS_CHILD | WS_VISIBLE | SS_LEFT, rc, this, IDC_STATIC_DPIINFO);
+	if (pFont != nullptr)
+		m_staticDpiInfo.SetFont(pFont);
 
-	//按100% DPI逻辑尺寸复选框（分组框底行左侧）
-	rc.SetRect(18, 130, 102, 141);
+	//按100% DPI逻辑尺寸复选框
+	rc.SetRect(18, 134, 102, 146);
 	MapDialogRect(&rc);
 	m_checkDpi100.Create(_T("按100% DPI(逻辑尺寸)"),
 		WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX, rc, this, IDC_CHECK_DPI100);
+	if (pFont != nullptr)
+		m_checkDpi100.SetFont(pFont);
 
-	//主流分辨率下拉框（分组框底行右侧）
-	rc.SetRect(104, 129, 166, 190);
+	//主流分辨率下拉框
+	rc.SetRect(104, 133, 168, 194);
 	MapDialogRect(&rc);
 	m_comboResolution.Create(
 		WS_CHILD | WS_VISIBLE | WS_VSCROLL | WS_TABSTOP | CBS_DROPDOWNLIST,
 		rc, this, IDC_COMBO_RESOLUTION);
+	if (pFont != nullptr)
+		m_comboResolution.SetFont(pFont);
 
 	//初始化主流分辨率下拉框
 	static const TCHAR* szResolutions[] = {

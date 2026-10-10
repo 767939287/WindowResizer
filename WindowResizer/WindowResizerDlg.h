@@ -1,5 +1,4 @@
-﻿
-// WindowResizerDlg.h: 头文件
+﻿// WindowResizerDlg.h: 头文件
 //
 
 #pragma once
@@ -39,7 +38,12 @@ private:
 	CEdit m_editShowCurHeight;
 	CEdit m_editSetWidth;
 	CEdit m_editSetHeight;
-	CEdit m_editSetPercentage;
+		CEdit m_editSetPercentage;
+
+	// 运行时动态创建的控件
+	CStatic m_staticDpiInfo;
+	CButton m_checkDpi100;
+	CComboBox m_comboResolution;
 
 	// 从指定窗口获取到的一些原始数据，不会被修改
 	HWND m_hWindowHandle;       //查找到的窗口的句柄
@@ -56,11 +60,18 @@ private:
 
 	bool m_bIsSetMaxSize{ false };          //是否设置过最大化
 
-	void UpdateSizeShow(int width,int height); //更新对话框上宽度和高度的显示
+	bool m_bUseLogicalSize{ false };        //是否按100% DPI（逻辑尺寸）显示和设置
+	UINT m_nTargetDpi{ 96 };                //目标窗口所在显示器的DPI，未选中窗口时为96（100%）
+	void UpdateSizeShow(int width,int height); //更新对话框上宽度和高度的显示(参数为物理像素)
 	bool IsWindowValid();                      //判断已选中的窗口是否有效
 	void SetPercentageEditEnable();	           //设置按比例缩放处的编辑框是否可用
 	void IsEnableAllControls(bool bIsEnable);  //设置除“开始查找窗口”按钮之外的所有控件的可用性
 	void SetMaxSizeButtonEnable();             //设置最大化按钮是否可用
+	UINT GetWindowDpi();                        //获取目标窗口所在显示器的DPI(Win10 1607+，失败回退程序DPI)
+	int PhysicalToLogical(int value);          //物理像素转逻辑尺寸(除以DPI/96)
+	int LogicalToPhysical(int value);          //逻辑尺寸转物理像素(乘以DPI/96)
+	void UpdateDpiInfoShow();                  //更新“当前缩放”的显示文本
+	void CreateDynamicControls();              //运行时动态创建新增控件（复选框、下拉框、缩放提示）
 public:
 	afx_msg void OnBnClickedButtonFindWindow();
 	afx_msg void OnTimer(UINT_PTR nIDEvent);
@@ -75,4 +86,8 @@ public:
 	afx_msg void OnBnClickedButtonMaxSize();
 	afx_msg void OnBnClickedButtonRestore();
 	afx_msg void OnBnClickedButtonAbout();
+	afx_msg void OnBnClickedCheckDpi100();
+	afx_msg void OnCbnSelchangeComboResolution();
 };
+
+

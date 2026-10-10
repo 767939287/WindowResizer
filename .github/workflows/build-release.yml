@@ -23,7 +23,7 @@ jobs:
         uses: microsoft/setup-msbuild@v2
 
       - name: Build Release x86
-        run: msbuild WindowResizer.sln /m /p:Configuration=Release /p:Platform=Win32 /p:PlatformToolset=v141
+        run: msbuild WindowResizer.sln /m /p:Configuration=Release /p:Platform=x86 /p:PlatformToolset=v141
 
       - name: Build Release x64
         run: msbuild WindowResizer.sln /m /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v141
@@ -54,5 +54,6 @@ jobs:
             output/WindowResizer-x86.exe
             output/WindowResizer-x64.exe
           generate_release_notes: ${{ github.event_name == 'push' }}
+
 
 

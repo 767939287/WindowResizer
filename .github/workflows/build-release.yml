@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   build:
-    runs-on: windows-2019
+    runs-on: windows-2022
 
     steps:
       - name: Checkout
@@ -23,7 +23,7 @@ jobs:
         uses: microsoft/setup-msbuild@v2
 
       - name: Build Release x64
-        run: msbuild WindowResizer.sln /m /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v141
+        run: msbuild WindowResizer.sln /m /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v143
 
       - name: Collect artifact
         run: |
@@ -43,4 +43,5 @@ jobs:
           files: |
             output/WindowResizer-x64.exe
           generate_release_notes: ${{ github.event_name == 'push' }}
+
 

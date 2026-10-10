@@ -262,7 +262,7 @@ void CWindowResizerDlg::CreateDynamicControls()
 		m_staticDpiInfo.SetFont(pFont);
 
 	//按100% DPI逻辑尺寸复选框
-	rc.SetRect(18, 134, 102, 146);
+	rc.SetRect(18, 135, 102, 146);
 	MapDialogRect(&rc);
 	m_checkDpi100.Create(_T("按100% DPI(逻辑尺寸)"),
 		WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX, rc, this, IDC_CHECK_DPI100);
@@ -270,7 +270,7 @@ void CWindowResizerDlg::CreateDynamicControls()
 		m_checkDpi100.SetFont(pFont);
 
 	//主流分辨率下拉框
-	rc.SetRect(104, 133, 168, 194);
+	rc.SetRect(104, 135, 168, 194);
 	MapDialogRect(&rc);
 	m_comboResolution.Create(
 		WS_CHILD | WS_VISIBLE | WS_VSCROLL | WS_TABSTOP | CBS_DROPDOWNLIST,

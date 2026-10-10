@@ -89,7 +89,8 @@ BEGIN_MESSAGE_MAP(CWindowResizerDlg, CDialogEx)
 	ON_BN_CLICKED(IDC_BUTTON_MAX_SIZE, &CWindowResizerDlg::OnBnClickedButtonMaxSize)
 	ON_BN_CLICKED(IDC_BUTTON_RESTORE, &CWindowResizerDlg::OnBnClickedButtonRestore)
 	ON_BN_CLICKED(IDC_BUTTON_ABOUT, &CWindowResizerDlg::OnBnClickedButtonAbout)
-	ON_BN_CLICKED(IDC_CHECK_DPI100, &CWindowResizerDlg::OnBnClickedCheckDpi100)
+	ON_BN_CLICKED(IDC_CHECK_DPI100_VIEW, &CWindowResizerDlg::OnBnClickedCheckDpi100View)
+	ON_BN_CLICKED(IDC_CHECK_DPI100_SET, &CWindowResizerDlg::OnBnClickedCheckDpi100Set)
 	ON_CBN_SELCHANGE(IDC_COMBO_RESOLUTION, &CWindowResizerDlg::OnCbnSelchangeComboResolution)
 END_MESSAGE_MAP()
 
@@ -218,18 +219,18 @@ UINT CWindowResizerDlg::GetWindowDpi()
 	return nDpi;
 }
 
-//物理像素转逻辑尺寸（100% DPI等效值）
-int CWindowResizerDlg::PhysicalToLogical(int value)
+//物理像素转逻辑尺寸（100% DPI等效值）；仅当bUseLogical为true且DPI非96时才换算
+int CWindowResizerDlg::PhysicalToLogical(int value, bool bUseLogical)
 {
-	if (!m_bUseLogicalSize || m_nTargetDpi == 96)
+	if (!bUseLogical || m_nTargetDpi == 96)
 		return value;
 	return (int)((double)value * 96.0 / m_nTargetDpi + 0.5);
 }
 
-//逻辑尺寸转物理像素
-int CWindowResizerDlg::LogicalToPhysical(int value)
+//逻辑尺寸转物理像素；仅当bUseLogical为true且DPI非96时才换算
+int CWindowResizerDlg::LogicalToPhysical(int value, bool bUseLogical)
 {
-	if (!m_bUseLogicalSize || m_nTargetDpi == 96)
+	if (!bUseLogical || m_nTargetDpi == 96)
 		return value;
 	return (int)((double)value * m_nTargetDpi / 96.0 + 0.5);
 }
@@ -253,24 +254,42 @@ void CWindowResizerDlg::CreateDynamicControls()
 	CRect rc;
 	CFont* pFont = GetFont();   //对话框字体，动态创建的控件需手动继承，否则字体大小不一致
 
-	//“当前缩放”提示，放在“设置大小”分组框右上角
-	rc.SetRect(104, 89, 166, 98);
+	//=================== “窗口数据”分组框 ===================
+	//“当前缩放”提示，放在“窗口数据”分组框底行左侧
+	rc.SetRect(18, 73, 80, 82);
 	MapDialogRect(&rc);
 	m_staticDpiInfo.Create(_T("当前缩放: --"),
 		WS_CHILD | WS_VISIBLE | SS_LEFT, rc, this, IDC_STATIC_DPIINFO);
 	if (pFont != nullptr)
 		m_staticDpiInfo.SetFont(pFont);
 
-	//按100% DPI逻辑尺寸复选框
-	rc.SetRect(18, 135, 102, 146);
+	//“窗口数据”区的100% DPI开关（仅控制显示），放在“窗口数据”分组框底行右侧
+	rc.SetRect(96, 72, 160, 83);
 	MapDialogRect(&rc);
-	m_checkDpi100.Create(_T("按100% DPI(逻辑尺寸)"),
-		WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX, rc, this, IDC_CHECK_DPI100);
+	m_checkDpiView.Create(_T("100% DPI"),
+		WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX, rc, this, IDC_CHECK_DPI100_VIEW);
 	if (pFont != nullptr)
-		m_checkDpi100.SetFont(pFont);
+		m_checkDpiView.SetFont(pFont);
 
-	//主流分辨率下拉框
-	rc.SetRect(104, 135, 168, 194);
+	//=================== “设置大小”分组框 ===================
+	//“设置大小”区的100% DPI开关（控制输入与设置），放在“设置大小”框宽度编辑框右侧
+	rc.SetRect(110, 98, 164, 109);
+	MapDialogRect(&rc);
+	m_checkDpiSet.Create(_T("100% DPI"),
+		WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX, rc, this, IDC_CHECK_DPI100_SET);
+	if (pFont != nullptr)
+		m_checkDpiSet.SetFont(pFont);
+
+	//“设置为主流分辨率”标签，放在“设置大小”分组框底行左侧
+	rc.SetRect(18, 132, 92, 141);
+	MapDialogRect(&rc);
+	m_staticResLabel.Create(_T("设置为主流分辨率"),
+		WS_CHILD | WS_VISIBLE | SS_LEFT, rc, this, IDC_STATIC_RESOLUTION_LABEL);
+	if (pFont != nullptr)
+		m_staticResLabel.SetFont(pFont);
+
+	//主流分辨率下拉框，放在标签右侧
+	rc.SetRect(96, 131, 164, 186);
 	MapDialogRect(&rc);
 	m_comboResolution.Create(
 		WS_CHILD | WS_VISIBLE | WS_VSCROLL | WS_TABSTOP | CBS_DROPDOWNLIST,
@@ -292,9 +311,9 @@ void CWindowResizerDlg::CreateDynamicControls()
 void CWindowResizerDlg::UpdateSizeShow(int width,int height)
 {
 	CString szWidth,szHeight;
-	//参数为物理像素，按当前设置换算后再显示（未开启逻辑尺寸时即为原值）
-	szWidth.Format(_T("%d"), PhysicalToLogical(width));
-	szHeight.Format(_T("%d"), PhysicalToLogical(height));
+	//参数为物理像素，按“窗口数据”区的显示开关换算后再显示
+	szWidth.Format(_T("%d"), PhysicalToLogical(width, m_bUseLogicalSizeView));
+	szHeight.Format(_T("%d"), PhysicalToLogical(height, m_bUseLogicalSizeView));
 	m_editShowCurWidth.SetWindowTextW(szWidth);
 	m_editShowCurHeight.SetWindowTextW(szHeight);
 }
@@ -366,9 +385,9 @@ void CWindowResizerDlg::OnBnClickedButtonSetSize()
 		if (nWidth == 0 || nHeight == 0)
 			return;
 
-		//输入值在开启逻辑尺寸时是100% DPI等效值，需要换算成物理像素再设置
-		int nPhysicalWidth = LogicalToPhysical(nWidth);
-		int nPhysicalHeight = LogicalToPhysical(nHeight);
+		//输入值在开启“设置大小”区的逻辑尺寸开关时是100% DPI等效值，需要换算成物理像素再设置
+		int nPhysicalWidth = LogicalToPhysical(nWidth, m_bUseLogicalSizeSet);
+		int nPhysicalHeight = LogicalToPhysical(nHeight, m_bUseLogicalSizeSet);
 		::SetWindowPos(m_hWindowHandle, NULL, 0, 0, nPhysicalWidth, nPhysicalHeight, SWP_NOZORDER | SWP_NOMOVE);
 
 		UpdateSizeShow(nPhysicalWidth, nPhysicalHeight);
@@ -433,9 +452,9 @@ void CWindowResizerDlg::OnBnClickedButtonSetPercentage()
 	{
 		CRect rect;
 		::GetWindowRect(m_hWindowHandle, rect);
-		//逻辑尺寸模式下以100% DPI等效值作为缩放基准，与显示和输入保持一致
-		m_nTempOriginalWidth = PhysicalToLogical(rect.Size().cx);
-		m_nTempOriginalHeight = PhysicalToLogical(rect.Size().cy);
+		//“设置大小”区开启逻辑尺寸时以100% DPI等效值作为缩放基准，与输入保持一致
+		m_nTempOriginalWidth = PhysicalToLogical(rect.Size().cx, m_bUseLogicalSizeSet);
+		m_nTempOriginalHeight = PhysicalToLogical(rect.Size().cy, m_bUseLogicalSizeSet);
 	}
 	if (m_bScaleIsCustomized)           //如果选中了自定义，则比例调整为自定义的值
 	{
@@ -450,8 +469,8 @@ void CWindowResizerDlg::OnBnClickedButtonSetPercentage()
 	nWidth = m_nTempOriginalWidth * m_nScalePercentage / 100;
 	nHeight = m_nTempOriginalHeight * m_nScalePercentage / 100;
 	//nWidth/nHeight为逻辑尺寸，需要换算成物理像素再设置
-	int nPhysicalWidth = LogicalToPhysical(nWidth);
-	int nPhysicalHeight = LogicalToPhysical(nHeight);
+	int nPhysicalWidth = LogicalToPhysical(nWidth, m_bUseLogicalSizeSet);
+	int nPhysicalHeight = LogicalToPhysical(nHeight, m_bUseLogicalSizeSet);
 	::SetWindowPos(m_hWindowHandle, NULL, 0, 0, nPhysicalWidth, nPhysicalHeight, SWP_NOZORDER | SWP_NOMOVE);
 
 	UpdateSizeShow(nPhysicalWidth, nPhysicalHeight);
@@ -505,18 +524,24 @@ void CWindowResizerDlg::OnBnClickedButtonAbout()
 	dlg.DoModal();
 }
 
-//勾选/取消“按100% DPI(逻辑尺寸)”时切换显示模式
-void CWindowResizerDlg::OnBnClickedCheckDpi100()
+//勾选/取消“窗口数据”区的100% DPI开关时，切换宽高的显示模式
+void CWindowResizerDlg::OnBnClickedCheckDpi100View()
 {
-	m_bUseLogicalSize = (m_checkDpi100.GetCheck() == BST_CHECKED);
+	m_bUseLogicalSizeView = (m_checkDpiView.GetCheck() == BST_CHECKED);
 
-	//切换后刷新当前窗口大小的显示
+	//切换后刷新“窗口数据”处当前窗口大小的显示
 	if (IsWindowValid())
 	{
 		CRect rect;
 		::GetWindowRect(m_hWindowHandle, rect);
 		UpdateSizeShow(rect.Size().cx, rect.Size().cy);
 	}
+}
+
+//勾选/取消“设置大小”区的100% DPI开关时，切换输入值的含义（100% DPI等效值 / 物理像素）
+void CWindowResizerDlg::OnBnClickedCheckDpi100Set()
+{
+	m_bUseLogicalSizeSet = (m_checkDpiSet.GetCheck() == BST_CHECKED);
 }
 
 //选择主流分辨率后，将其填入“设置大小”的宽度和高度
@@ -588,7 +613,8 @@ void CWindowResizerDlg::IsEnableAllControls(bool bIsEnable)
 	GetDlgItem(IDC_RADIO_CUSTOM)->EnableWindow(bIsEnable);
 	GetDlgItem(IDC_BUTTON_SET_PERCENTAGE)->EnableWindow(bIsEnable);
 	GetDlgItem(IDC_BUTTON_RESTORE)->EnableWindow(bIsEnable);
-	m_checkDpi100.EnableWindow(bIsEnable);
+	m_checkDpiView.EnableWindow(bIsEnable);
+	m_checkDpiSet.EnableWindow(bIsEnable);
 	m_comboResolution.EnableWindow(bIsEnable);
 	SetMaxSizeButtonEnable();
 	SetPercentageEditEnable();

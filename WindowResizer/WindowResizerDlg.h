@@ -42,8 +42,10 @@ private:
 
 	// 运行时动态创建的控件
 	CStatic m_staticDpiInfo;
-	CButton m_checkDpi100;
+	CButton m_checkDpiView;      //“窗口数据”区的100% DPI开关，仅控制显示
+	CButton m_checkDpiSet;       //“设置大小”区的100% DPI开关，控制输入与设置
 	CComboBox m_comboResolution;
+	CStatic m_staticResLabel;    //“设置为主流分辨率”标签
 
 	// 从指定窗口获取到的一些原始数据，不会被修改
 	HWND m_hWindowHandle;       //查找到的窗口的句柄
@@ -60,7 +62,8 @@ private:
 
 	bool m_bIsSetMaxSize{ false };          //是否设置过最大化
 
-	bool m_bUseLogicalSize{ false };        //是否按100% DPI（逻辑尺寸）显示和设置
+	bool m_bUseLogicalSizeView{ false };    //“窗口数据”区是否按100% DPI显示
+	bool m_bUseLogicalSizeSet{ false };     //“设置大小”区是否按100% DPI输入与设置
 	UINT m_nTargetDpi{ 96 };                //目标窗口所在显示器的DPI，未选中窗口时为96（100%）
 	void UpdateSizeShow(int width,int height); //更新对话框上宽度和高度的显示(参数为物理像素)
 	bool IsWindowValid();                      //判断已选中的窗口是否有效
@@ -68,8 +71,8 @@ private:
 	void IsEnableAllControls(bool bIsEnable);  //设置除“开始查找窗口”按钮之外的所有控件的可用性
 	void SetMaxSizeButtonEnable();             //设置最大化按钮是否可用
 	UINT GetWindowDpi();                        //获取目标窗口所在显示器的DPI(Win10 1607+，失败回退程序DPI)
-	int PhysicalToLogical(int value);          //物理像素转逻辑尺寸(除以DPI/96)
-	int LogicalToPhysical(int value);          //逻辑尺寸转物理像素(乘以DPI/96)
+	int PhysicalToLogical(int value, bool bUseLogical);  //物理像素转逻辑尺寸(除以DPI/96)
+	int LogicalToPhysical(int value, bool bUseLogical);  //逻辑尺寸转物理像素(乘以DPI/96)
 	void UpdateDpiInfoShow();                  //更新“当前缩放”的显示文本
 	void CreateDynamicControls();              //运行时动态创建新增控件（复选框、下拉框、缩放提示）
 public:
@@ -86,8 +89,13 @@ public:
 	afx_msg void OnBnClickedButtonMaxSize();
 	afx_msg void OnBnClickedButtonRestore();
 	afx_msg void OnBnClickedButtonAbout();
-	afx_msg void OnBnClickedCheckDpi100();
+	afx_msg void OnBnClickedCheckDpi100View();
+	afx_msg void OnBnClickedCheckDpi100Set();
 	afx_msg void OnCbnSelchangeComboResolution();
 };
+
+
+
+
 
 

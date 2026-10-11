@@ -256,7 +256,7 @@ void CWindowResizerDlg::CreateDynamicControls()
 
 	//=================== “窗口数据”分组框 ===================
 	//“当前缩放”提示，放在“窗口数据”分组框底行左侧
-	rc.SetRect(18, 73, 80, 82);
+	rc.SetRect(18, 79, 80, 88);
 	MapDialogRect(&rc);
 	m_staticDpiInfo.Create(_T("当前缩放: --"),
 		WS_CHILD | WS_VISIBLE | SS_LEFT, rc, this, IDC_STATIC_DPIINFO);
@@ -264,7 +264,7 @@ void CWindowResizerDlg::CreateDynamicControls()
 		m_staticDpiInfo.SetFont(pFont);
 
 	//“窗口数据”区的100% DPI开关（仅控制显示），放在“窗口数据”分组框底行右侧
-	rc.SetRect(96, 72, 160, 83);
+	rc.SetRect(96, 78, 160, 89);
 	MapDialogRect(&rc);
 	m_checkDpiView.Create(_T("100% DPI"),
 		WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX, rc, this, IDC_CHECK_DPI100_VIEW);
@@ -273,7 +273,7 @@ void CWindowResizerDlg::CreateDynamicControls()
 
 	//=================== “设置大小”分组框 ===================
 	//“设置大小”区的100% DPI开关（控制输入与设置），放在“设置大小”框宽度编辑框右侧
-	rc.SetRect(110, 98, 164, 109);
+	rc.SetRect(110, 118, 164, 129);
 	MapDialogRect(&rc);
 	m_checkDpiSet.Create(_T("100% DPI"),
 		WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX, rc, this, IDC_CHECK_DPI100_SET);
@@ -281,7 +281,7 @@ void CWindowResizerDlg::CreateDynamicControls()
 		m_checkDpiSet.SetFont(pFont);
 
 	//“设置为主流分辨率”标签，放在“设置大小”分组框底行左侧
-	rc.SetRect(18, 132, 92, 141);
+	rc.SetRect(18, 160, 92, 169);
 	MapDialogRect(&rc);
 	m_staticResLabel.Create(_T("设置为主流分辨率"),
 		WS_CHILD | WS_VISIBLE | SS_LEFT, rc, this, IDC_STATIC_RESOLUTION_LABEL);
@@ -289,7 +289,7 @@ void CWindowResizerDlg::CreateDynamicControls()
 		m_staticResLabel.SetFont(pFont);
 
 	//主流分辨率下拉框，放在标签右侧
-	rc.SetRect(96, 131, 164, 186);
+	rc.SetRect(96, 159, 164, 214);
 	MapDialogRect(&rc);
 	m_comboResolution.Create(
 		WS_CHILD | WS_VISIBLE | WS_VSCROLL | WS_TABSTOP | CBS_DROPDOWNLIST,
@@ -299,9 +299,14 @@ void CWindowResizerDlg::CreateDynamicControls()
 
 	//初始化主流分辨率下拉框
 	static const TCHAR* szResolutions[] = {
-		_T("800x600"), _T("1024x768"), _T("1280x720"), _T("1280x800"), _T("1280x1024"),
-		_T("1366x768"), _T("1440x900"), _T("1600x900"), _T("1600x1200"), _T("1680x1050"),
-		_T("1920x1080"), _T("1920x1200"), _T("2560x1440"), _T("2560x1600"), _T("3840x2160")
+		// 按宽度升序排列（宽度相同时按高度升序）
+		_T("640x480"),   _T("800x600"),   _T("1024x768"),  _T("1152x864"),
+		_T("1280x720"),  _T("1280x800"),  _T("1280x960"),  _T("1280x1024"),
+		_T("1366x768"),  _T("1400x1050"), _T("1440x900"),  _T("1600x900"),
+		_T("1600x1200"), _T("1680x1050"), _T("1920x1080"), _T("1920x1200"),
+		_T("2048x1536"), _T("2560x1080"), _T("2560x1440"), _T("2560x1600"),
+		_T("2880x1800"), _T("3200x1800"), _T("3440x1440"), _T("3840x1600"),
+		_T("3840x2160")
 	};
 	for (int i = 0; i < _countof(szResolutions); i++)
 		m_comboResolution.AddString(szResolutions[i]);

@@ -26,21 +26,35 @@
 #define IDC_BUTTON_MAX_SIZE             1016
 #define IDC_BUTTON_RESTORE              1017
 #define IDC_BUTTON_ABOUT                1018
-#define IDC_SYSLINK_EMAIL               1019
 #define IDC_SYSLINK_CHECK_UPDATE        1019
 #define IDC_CHECK_DPI100_VIEW           1020
 #define IDC_STATIC_DPIINFO              1021
 #define IDC_COMBO_RESOLUTION            1022
 #define IDC_CHECK_DPI100_SET            1023
 #define IDC_STATIC_RESOLUTION_LABEL     1024
+#define IDC_CHECK_CLIENT_AREA           1025
+
+#define IDS_DPI_INFO_FORMAT             2001
+#define IDS_DPI_INFO_NONE               2002
+#define IDS_RESOLUTION_LABEL            2003
+#define IDS_DPI100_VIEW                 2004
+#define IDS_DPI100_SET                  2005
+#define IDS_MENU_LANGUAGE               2006
+#define IDS_LANG_ZH                     2007
+#define IDS_LANG_EN                     2008
+#define IDS_RESTART_TIP                 2009
+#define IDS_RESTART_TIP_CAPTION         2010
+
+#define IDM_LANGUAGE_ZH                 32771
+#define IDM_LANGUAGE_EN                 32772
 
 // Next default values for new objects
 // 
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        132
-#define _APS_NEXT_COMMAND_VALUE         32771
-#define _APS_NEXT_CONTROL_VALUE         1025
+#define _APS_NEXT_COMMAND_VALUE         32773
+#define _APS_NEXT_CONTROL_VALUE         1026
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

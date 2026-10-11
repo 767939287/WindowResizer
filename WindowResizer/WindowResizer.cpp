@@ -5,6 +5,7 @@
 #include "stdafx.h"
 #include "WindowResizer.h"
 #include "WindowResizerDlg.h"
+#include "LanguageManager.h"
 
 #ifdef _DEBUG
 #define new DEBUG_NEW
@@ -69,6 +70,11 @@ BOOL CWindowResizerApp::InitInstance()
 	// TODO: 应适当修改该字符串，
 	// 例如修改为公司或组织名
 	SetRegistryKey(_T("应用程序向导生成的本地应用程序"));
+
+	// 按“注册表偏好 → 系统语言”的顺序确定界面语言。
+	// 必须在创建任何对话框/菜单之前完成，否则资源会按默认语言解析；
+	// 同时需置于 SetRegistryKey 之后，否则读不到注册表中保存的语言偏好。
+	LanguageManager::ApplyLanguage(LanguageManager::GetSavedOrSystemLanguage());
 
 	CWindowResizerDlg dlg;
 	m_pMainWnd = &dlg;

@@ -47,6 +47,9 @@ private:
 	CComboBox m_comboResolution;
 	CStatic m_staticResLabel;    //“设置为主流分辨率”标签
 
+	/// 「快捷功能」区的尺寸口径开关：勾选=以整个窗口(含标题栏/边框)为尺寸目标，不勾=以客户区为目标。
+	CButton m_checkClientArea;
+
 	// 从指定窗口获取到的一些原始数据，不会被修改
 	HWND m_hWindowHandle;       //查找到的窗口的句柄
 	CString m_szWindowTitle;    //查找到的窗口的标题
@@ -65,6 +68,11 @@ private:
 	bool m_bUseLogicalSizeView{ false };    //“窗口数据”区是否按100% DPI显示
 	bool m_bUseLogicalSizeSet{ false };     //“设置大小”区是否按100% DPI输入与设置
 	UINT m_nTargetDpi{ 96 };                //目标窗口所在显示器的DPI，未选中窗口时为96（100%）
+
+	/// 尺寸口径开关：true=以客户区(viewport)为尺寸目标；false=以整个窗口(含标题栏/边框)为目标。
+	/// 默认 true，对应复选框默认不勾（即默认按客户区）。
+	bool m_bUseClientArea{ true };
+
 	void UpdateSizeShow(int width,int height); //更新对话框上宽度和高度的显示(参数为物理像素)
 	bool IsWindowValid();                      //判断已选中的窗口是否有效
 	void SetPercentageEditEnable();	           //设置按比例缩放处的编辑框是否可用
@@ -75,6 +83,18 @@ private:
 	int LogicalToPhysical(int value, bool bUseLogical);  //逻辑尺寸转物理像素(乘以DPI/96)
 	void UpdateDpiInfoShow();                  //更新“当前缩放”的显示文本
 	void CreateDynamicControls();              //运行时动态创建新增控件（复选框、下拉框、缩放提示）
+
+	/// 按当前口径取目标尺寸（物理像素）：客户区模式用 GetClientRect，否则用 GetWindowRect。
+	/// @param nWidth  [out] 目标宽度（物理像素），无有效窗口时输出 0。
+	/// @param nHeight [out] 目标高度（物理像素），无有效窗口时输出 0。
+	void GetTargetSizePhysical(int& nWidth, int& nHeight);
+
+	/// 由「客户区尺寸(物理像素)」反推「SetWindowPos 所需的窗口尺寸」。
+	/// @param nClientWidth  客户区宽度（物理像素）。
+	/// @param nClientHeight 客户区高度（物理像素）。
+	/// @return 对应的窗口尺寸；窗口句柄无效或样式获取失败时回退为直接返回入参尺寸。
+	CSize WindowSizeFromClientSize(int nClientWidth, int nClientHeight);
+
 public:
 	afx_msg void OnBnClickedButtonFindWindow();
 	afx_msg void OnTimer(UINT_PTR nIDEvent);
@@ -92,6 +112,7 @@ public:
 	afx_msg void OnBnClickedCheckDpi100View();
 	afx_msg void OnBnClickedCheckDpi100Set();
 	afx_msg void OnCbnSelchangeComboResolution();
+	afx_msg void OnBnClickedCheckClientArea();
 };
 
 

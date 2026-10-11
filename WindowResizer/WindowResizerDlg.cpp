@@ -154,9 +154,6 @@ BOOL CWindowResizerDlg::OnInitDialog()
 
 	IsEnableAllControls(false);   //初始状态未选中窗口所有控件都不可用
 
-	// 已弃用，现在通过修改int型变量m_nRadioSelect的值（已默认设为1）来修改Radio Button选中状态
-	//((CButton*)GetDlgItem(IDC_RADIO_100))->SetCheck(TRUE); //比例缩放默认选中100%
-
 	SetTimer(2, 1000, NULL);     //设置定时器，每隔一秒检查一次窗口的有效性
 
 	return TRUE;  // 除非将焦点设置到控件，否则返回 TRUE
@@ -764,8 +761,6 @@ void CWindowResizerDlg::IsEnableAllControls(bool bIsEnable)
 {
 	GetDlgItem(IDC_EDIT_HANDLE)->EnableWindow(bIsEnable);
 	GetDlgItem(IDC_EDIT_TITLE)->EnableWindow(bIsEnable);
-	GetDlgItem(IDC_EDIT_HEIGHT)->EnableWindow(bIsEnable);
-	GetDlgItem(IDC_EDIT_HEIGHT)->EnableWindow(bIsEnable);
 	GetDlgItem(IDC_EDIT_WIDTH)->EnableWindow(bIsEnable);
 	GetDlgItem(IDC_EDIT_HEIGHT)->EnableWindow(bIsEnable);
 	GetDlgItem(IDC_EDIT_SET_WIDTH)->EnableWindow(bIsEnable);

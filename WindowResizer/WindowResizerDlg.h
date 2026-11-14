@@ -5,6 +5,7 @@
 
 #include "AppConfig.h"
 #include "ChromiumViewport.h"
+#include "PickerOverlay.h"
 
 /// 尺寸口径：决定用户看到/输入的数字代表窗口的哪一部分。
 enum SizeMode
@@ -90,6 +91,7 @@ private:
 
 	bool m_bPicking{ false };               // 是否正在拾取目标窗口
 	HCURSOR m_hCursorPick{ nullptr };       // 拾取时使用的十字光标（系统 IDC_CROSS）
+	CPickerOverlay m_overlay;               // 拾取时的全屏蒙版（屏幕压暗 + 目标窗口凸显）
 
 	void UpdateSizeShow(int width,int height); //更新对话框上宽度和高度的显示(参数为父窗口物理尺寸)
 	bool IsWindowValid();                      //判断已选中的窗口是否有效
@@ -159,6 +161,10 @@ private:
 	/// @param bAccepted true 表示已成功拾取到目标窗口；false 表示用户取消或按 Esc 放弃。
 	void StopPicking(bool bAccepted);
 
+	/// 把拾取到的窗口信息填入界面（供蒙版拾取路径复用）。
+	/// @param hTarget 目标窗口句柄，调用方需保证其有效。
+	void FillTargetWindowInfo(HWND hTarget);
+
 public:
 	afx_msg void OnBnClickedButtonFindWindow();
 	afx_msg void OnTimer(UINT_PTR nIDEvent);
@@ -180,4 +186,5 @@ public:
 	afx_msg void OnCbnSelchangeComboProfile();
 	afx_msg void OnBnClickedCheckAutoswitch();
 	afx_msg void OnBnClickedButtonSaveProfile();
+	afx_msg LRESULT OnOverlayPickWindow(WPARAM wParam, LPARAM lParam);
 };

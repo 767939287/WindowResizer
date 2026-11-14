@@ -103,6 +103,7 @@ BEGIN_MESSAGE_MAP(CWindowResizerDlg, CDialogEx)
 	ON_CBN_SELCHANGE(IDC_COMBO_PROFILE, &CWindowResizerDlg::OnCbnSelchangeComboProfile)
 	ON_BN_CLICKED(IDC_CHECK_AUTOSWITCH, &CWindowResizerDlg::OnBnClickedCheckAutoswitch)
 	ON_BN_CLICKED(IDC_BUTTON_SAVE_PROFILE, &CWindowResizerDlg::OnBnClickedButtonSaveProfile)
+	ON_MESSAGE(WM_PICKER_RESULT, &CWindowResizerDlg::OnOverlayPickWindow)
 END_MESSAGE_MAP()
 
 
@@ -593,9 +594,17 @@ void CWindowResizerDlg::OnBnClickedButtonFindWindow()
 	StartPicking();
 }
 
-//进入拾取状态：切十字光标、按钮文案改为「取消拾取」、提高轮询频率
+//进入拾取状态：显示全屏蒙版并切换按钮文案
 void CWindowResizerDlg::StartPicking()
 {
+	if (m_bPicking)
+		return;
+
+	// 蒙版创建失败（虚拟屏幕尺寸异常或位图分配失败）时直接返回，
+	// 避免界面进入「已拾取」的假状态而用户看不到任何提示
+	if (!m_overlay.Begin(this))
+		return;
+
 	m_bPicking = true;
 
 	// 按钮文字实时切换：这是「正在拾取」最明确的反馈，同时提供退出入口
@@ -604,28 +613,20 @@ void CWindowResizerDlg::StartPicking()
 	CWnd* pBtn = GetDlgItem(IDC_BUTTON_FIND_WINDOW);
 	if (pBtn != nullptr)
 		pBtn->SetWindowTextW(szBtn);
-
-	// 拾取期间把 1000ms 轮询提到 200ms：否则点击目标后最长要等 1 秒才出结果
-	SetTimer(1, 200, NULL);
-
-	// 40ms 强制重设光标：鼠标停在其他窗口上方时，对方的 WM_SETCURSOR 会把光标改回箭头，
-	// 单靠本窗口的 OnSetCursor 覆盖不到，故用一个轻量定时器兜底
-	SetTimer(3, 40, NULL);
-
-	::SetCursor(m_hCursorPick);
 }
 
-//退出拾取状态并复位所有视觉与定时器状态
+//退出拾取状态并复位所有视觉状态
 void CWindowResizerDlg::StopPicking(bool bAccepted)
 {
+	UNREFERENCED_PARAMETER(bAccepted);
+
+	// 蒙版可能已由自身（点击/右键/Esc）先行关闭，End 内部做了幂等处理
+	m_overlay.End();
+
 	if (!m_bPicking)
 		return;
 
 	m_bPicking = false;
-	KillTimer(3);
-
-	// 恢复原有低频轮询节奏，避免常态化占用 200ms 定时器（200ms 只在拾取期需要）
-	SetTimer(1, 1000, NULL);
 
 	CString szBtn;
 	szBtn.LoadString(IDS_BTN_FIND);
@@ -634,12 +635,9 @@ void CWindowResizerDlg::StopPicking(bool bAccepted)
 		pBtn->SetWindowTextW(szBtn);
 
 	::SetCursor(::LoadCursor(NULL, IDC_ARROW));
-
-	// bAccepted 为 true 时，目标窗口信息已在 OnTimer 里填好，这里只负责清理状态
-	UNREFERENCED_PARAMETER(bAccepted);
 }
 
-//拾取期间拦截光标：覆盖本窗口范围内的光标，避免子控件把光标改回箭头
+//拾取期间拦截光标：覆盖本窗口范围内的光标（蒙版未覆盖到的区域）
 BOOL CWindowResizerDlg::OnSetCursor(CWnd* pWnd, UINT nHitTest, UINT message)
 {
 	if (m_bPicking && m_hCursorPick != nullptr)
@@ -650,84 +648,83 @@ BOOL CWindowResizerDlg::OnSetCursor(CWnd* pWnd, UINT nHitTest, UINT message)
 	return CDialogEx::OnSetCursor(pWnd, nHitTest, message);
 }
 
+//把拾取到的窗口信息填入界面（蒙版拾取与定时器两条路径共用）
+void CWindowResizerDlg::FillTargetWindowInfo(HWND hTarget)
+{
+	m_hWindowHandle = hTarget;
+	m_pWnd = CWnd::FromHandle(hTarget);
+
+	CString szHandle;
+	szHandle.Format(_T("%.8x"), hTarget);
+	szHandle.MakeUpper();
+	m_editShowHandle.SetWindowTextW(szHandle);
+
+	m_pWnd->GetWindowTextW(m_szWindowTitle);
+	m_editShowTitle.SetWindowTextW(m_szWindowTitle);
+
+	// m_sizeOriginalWindow 固定记录窗口矩形尺寸（物理像素），作为精确还原基准，不随尺寸口径变化
+	CRect rect;
+	::GetWindowRect(hTarget, rect);
+	m_sizeOriginalWindow = rect.Size();
+
+	m_nTargetDpi = GetWindowDpi();   //获取目标窗口所在显示器的DPI
+
+	//显示入口统一传「父窗口矩形」尺寸，由 UpdateSizeShow 按当前口径反算显示值
+	UpdateSizeShow(rect.Width(), rect.Height());
+	UpdateDpiInfoShow();
+	UpdateViewportModeAvailability();
+
+	IsEnableAllControls(IsWindowValid());
+
+	// 每次选中新窗口后，这两个标志都需要重新初始化
+	m_bClickedSetPercentage = false;
+	m_bIsSetMaxSize = false;
+}
+
+//接收蒙版回传的拾取结果：wParam 为窗口句柄，NULL 表示取消
+LRESULT CWindowResizerDlg::OnOverlayPickWindow(WPARAM wParam, LPARAM lParam)
+{
+	UNREFERENCED_PARAMETER(lParam);
+
+	HWND hTarget = reinterpret_cast<HWND>(wParam);
+	if (hTarget != NULL && ::IsWindow(hTarget))
+	{
+		FillTargetWindowInfo(hTarget);
+
+		// 按进程自动匹配档案：仅在用户显式开启「按进程自动切换」时才动作，默认关闭
+		if (m_config.IsAutoSwitchEnabled())
+		{
+			CString szProc;
+			if (Chromium::GetProcessImageName(hTarget, szProc))
+			{
+				CString szMatched = m_config.MatchProfileByProcess(szProc);
+				const RESOLUTION_PROFILE* pCur = m_config.GetActiveProfile();
+				// 命中且与当前激活档案不同才切换，避免反复重填下拉框
+				if (!szMatched.IsEmpty() && (pCur == nullptr || szMatched != pCur->szName))
+				{
+					m_config.SetActiveProfile(szMatched);
+					RefreshProfileCombo();
+					RefreshResolutionCombo();
+				}
+			}
+		}
+
+		StopPicking(true);
+	}
+	else
+	{
+		StopPicking(false);
+	}
+
+	return 0;
+}
+
 
 
 
 void CWindowResizerDlg::OnTimer(UINT_PTR nIDEvent)
 {
-	if (nIDEvent == 3)
-	{
-		// 拾取期间强制维持十字光标：鼠标移到其他窗口上方时对方的 WM_SETCURSOR 会覆盖它
-		if (m_bPicking && m_hCursorPick != nullptr)
-			::SetCursor(m_hCursorPick);
-		else
-			KillTimer(3);
-		return;   // 该定时器只服务于光标维持，不落到基类
-	}
-
-	if (nIDEvent == 1)
-	{
-		// Esc 取消拾取：拾取时本程序通常已失焦，收不到 WM_KEYDOWN，故读全局键态
-		if (m_bPicking && (::GetAsyncKeyState(VK_ESCAPE) & 0x8000) != 0)
-		{
-			StopPicking(false);
-			return;
-		}
-
-		CWnd* pWnd = GetForegroundWindow();
-		m_hWindowHandle = pWnd->GetSafeHwnd();
-		if (m_hWindowHandle != NULL && m_hWindowHandle != m_hWnd)//只有处于前台的窗口不是程序本身的窗口，才说明找到了
-		{
-			m_pWnd = pWnd;
-			CString szHandle;
-			szHandle.Format(_T("%.8x"), m_hWindowHandle);
-			szHandle.MakeUpper();
-			m_editShowHandle.SetWindowTextW(szHandle);
-
-			pWnd->GetWindowTextW(m_szWindowTitle);
-			m_editShowTitle.SetWindowTextW(m_szWindowTitle);
-
-			//获取窗口的大小：m_sizeOriginalWindow 固定记录窗口矩形尺寸（物理像素），作为精确还原基准，不随尺寸口径变化
-			CRect rect;
-			::GetWindowRect(m_hWindowHandle, rect);
-			m_sizeOriginalWindow = rect.Size();
-
-			m_nTargetDpi = GetWindowDpi();   //获取目标窗口所在显示器的DPI
-
-			//显示入口统一传「父窗口矩形」尺寸，由 UpdateSizeShow 按当前口径反算显示值
-			UpdateSizeShow(rect.Width(), rect.Height());
-			UpdateDpiInfoShow();
-			UpdateViewportModeAvailability();
-
-			IsEnableAllControls(IsWindowValid());
-
-			StopPicking(true);   // 拾取成功：统一复位光标、按钮文案与定时器
-
-			// 按进程自动匹配档案：仅在用户显式开启「按进程自动切换」时才动作，默认关闭
-			if (m_config.IsAutoSwitchEnabled())
-			{
-				CString szProc;
-				if (Chromium::GetProcessImageName(m_hWindowHandle, szProc))
-				{
-					CString szMatched = m_config.MatchProfileByProcess(szProc);
-					const RESOLUTION_PROFILE* pCur = m_config.GetActiveProfile();
-					// 命中且与当前激活档案不同才切换，避免反复重填下拉框
-					if (!szMatched.IsEmpty() && (pCur == nullptr || szMatched != pCur->szName))
-					{
-						m_config.SetActiveProfile(szMatched);
-						RefreshProfileCombo();
-						RefreshResolutionCombo();
-					}
-				}
-			}
-
-			KillTimer(1);       //找到窗口之后停掉定时器
-		}
-		// 不管窗口是否有效，每次点击“查找窗口”按钮之后这些值都需要重新初始化
-		m_bClickedSetPercentage = false;
-		m_bIsSetMaxSize = false;
-	}
-	else if (nIDEvent == 2)
+	if (nIDEvent == 2)
 	{
 		//每隔1秒钟检查一次要操作的窗口是否有效，并调用控件的启用或禁用状态
 		IsEnableAllControls(IsWindowValid());

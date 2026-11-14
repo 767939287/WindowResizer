@@ -32,7 +32,13 @@
 #define IDC_COMBO_RESOLUTION            1022
 #define IDC_CHECK_DPI100_SET            1023
 #define IDC_STATIC_RESOLUTION_LABEL     1024
-#define IDC_CHECK_CLIENT_AREA           1025
+#define IDC_COMBO_SIZE_MODE             1026
+#define IDC_COMBO_PROFILE               1027
+#define IDC_CHECK_AUTOSWITCH            1028
+#define IDC_BUTTON_SAVE_PROFILE         1029
+#define IDC_STATIC_PROFILE_LABEL        1030
+#define IDC_STATIC_SIZE_MODE_LABEL      1031
+#define IDC_STATIC_VIEWPORT_INFO        1032
 
 #define IDS_DPI_INFO_FORMAT             2001
 #define IDS_DPI_INFO_NONE               2002
@@ -45,6 +51,17 @@
 #define IDS_RESTART_TIP                 2009
 #define IDS_RESTART_TIP_CAPTION         2010
 
+#define IDS_VIEWPORT_OK                 2011
+#define IDS_VIEWPORT_FALLBACK           2012
+#define IDS_PROFILE_SAVED               2013
+#define IDS_INI_REGENERATED             2014
+#define IDS_ERR_INI_WRITE               2015
+#define IDS_MODE_WINDOW                 2016
+#define IDS_MODE_CLIENT                 2017
+#define IDS_MODE_VIEWPORT               2018
+#define IDS_BTN_FIND                    2019
+#define IDS_BTN_PICKING                 2020
+
 #define IDM_LANGUAGE_ZH                 32771
 #define IDM_LANGUAGE_EN                 32772
 
@@ -54,7 +71,7 @@
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        132
 #define _APS_NEXT_COMMAND_VALUE         32773
-#define _APS_NEXT_CONTROL_VALUE         1026
+#define _APS_NEXT_CONTROL_VALUE         1033
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

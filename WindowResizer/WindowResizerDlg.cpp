@@ -70,7 +70,11 @@ void CWindowResizerDlg::DoDataExchange(CDataExchange* pDX)
 	DDX_Control(pDX, IDC_EDIT_SET_WIDTH, m_editSetWidth);
 	DDX_Control(pDX, IDC_EDIT_SET_HEIGHT, m_editSetHeight);
 	DDX_Control(pDX, IDC_EDIT_PERCENTAGE_CUSTOM, m_editSetPercentage);
-	DDX_Control(pDX, IDC_CHECK_CLIENT_AREA, m_checkClientArea);
+	DDX_Control(pDX, IDC_COMBO_SIZE_MODE, m_comboSizeMode);
+	DDX_Control(pDX, IDC_COMBO_PROFILE, m_comboProfile);
+	DDX_Control(pDX, IDC_CHECK_AUTOSWITCH, m_checkAutoSwitch);
+	DDX_Control(pDX, IDC_BUTTON_SAVE_PROFILE, m_btnSaveProfile);
+	DDX_Control(pDX, IDC_STATIC_VIEWPORT_INFO, m_staticViewportInfo);
 	DDX_Radio(pDX, IDC_RADIO_50, m_nRadioSelect);
 }
 
@@ -78,6 +82,7 @@ BEGIN_MESSAGE_MAP(CWindowResizerDlg, CDialogEx)
 	ON_WM_SYSCOMMAND()
 	ON_WM_PAINT()
 	ON_WM_QUERYDRAGICON()
+	ON_WM_SETCURSOR()
 	ON_BN_CLICKED(IDC_BUTTON_FIND_WINDOW, &CWindowResizerDlg::OnBnClickedButtonFindWindow)
 	ON_WM_TIMER()
 	ON_BN_CLICKED(IDC_BUTTON_SET_SIZE, &CWindowResizerDlg::OnBnClickedButtonSetSize)
@@ -94,7 +99,10 @@ BEGIN_MESSAGE_MAP(CWindowResizerDlg, CDialogEx)
 	ON_BN_CLICKED(IDC_CHECK_DPI100_VIEW, &CWindowResizerDlg::OnBnClickedCheckDpi100View)
 	ON_BN_CLICKED(IDC_CHECK_DPI100_SET, &CWindowResizerDlg::OnBnClickedCheckDpi100Set)
 	ON_CBN_SELCHANGE(IDC_COMBO_RESOLUTION, &CWindowResizerDlg::OnCbnSelchangeComboResolution)
-	ON_BN_CLICKED(IDC_CHECK_CLIENT_AREA, &CWindowResizerDlg::OnBnClickedCheckClientArea)
+	ON_CBN_SELCHANGE(IDC_COMBO_SIZE_MODE, &CWindowResizerDlg::OnCbnSelchangeComboSizeMode)
+	ON_CBN_SELCHANGE(IDC_COMBO_PROFILE, &CWindowResizerDlg::OnCbnSelchangeComboProfile)
+	ON_BN_CLICKED(IDC_CHECK_AUTOSWITCH, &CWindowResizerDlg::OnBnClickedCheckAutoswitch)
+	ON_BN_CLICKED(IDC_BUTTON_SAVE_PROFILE, &CWindowResizerDlg::OnBnClickedButtonSaveProfile)
 END_MESSAGE_MAP()
 
 
@@ -147,10 +155,29 @@ BOOL CWindowResizerDlg::OnInitDialog()
 	SetIcon(m_hIcon, TRUE);			// 设置大图标
 	SetIcon(m_hIcon, FALSE);		// 设置小图标
 
+	// 拾取态使用系统内置的「精确选择」十字光标（IDC_CROSS）：自带高 DPI 版本，且跟随用户的指针方案，
+	// 无需打包自绘 .cur 文件（自绘在 125%/150% 缩放下会发虚）
+	m_hCursorPick = ::LoadCursor(NULL, IDC_CROSS);
+
 	// TODO: 在此添加额外的初始化代码
+
+	// 载入 ini 配置：文件不存在时会自动生成带中文注释与示例的默认文件
+	m_config.Load();
+
+	// 尺寸口径下拉：下标 0/1/2 与 SizeMode 枚举严格一一对应，SetCurSel/GetCurSel 可直接互换
+	for (int i = 0; i < 3; i++)
+	{
+		CString szMode;
+		szMode.LoadString(IDS_MODE_WINDOW + i);   // IDS_MODE_WINDOW/CLIENT/VIEWPORT 三个 ID 连续
+		m_comboSizeMode.AddString(szMode);
+	}
+	m_comboSizeMode.SetCurSel(m_nSizeMode);
 
 	//资源文件未包含以下新增控件，这里在运行时动态创建，避免修改资源的编码
 	CreateDynamicControls();
+
+	RefreshProfileCombo();
+	m_checkAutoSwitch.SetCheck(m_config.IsAutoSwitchEnabled() ? BST_CHECKED : BST_UNCHECKED);
 
 	IsEnableAllControls(false);   //初始状态未选中窗口所有控件都不可用
 
@@ -276,28 +303,137 @@ CSize CWindowResizerDlg::WindowSizeFromClientSize(int nClientWidth, int nClientH
 	return CSize(rc.right - rc.left, rc.bottom - rc.top);
 }
 
-//按当前口径取目标尺寸（物理像素）：客户区模式用 GetClientRect，否则用 GetWindowRect
-void CWindowResizerDlg::GetTargetSizePhysical(int& nWidth, int& nHeight)
+//按当前口径取目标尺寸（物理像素）：整个窗口用 GetWindowRect，客户区/浏览器视口用 GetClientRect 或渲染子窗口矩形
+bool CWindowResizerDlg::GetTargetSizePhysical(int& nWidth, int& nHeight)
 {
 	nWidth = 0;
 	nHeight = 0;
 	if (m_hWindowHandle == NULL || !::IsWindow(m_hWindowHandle))
-		return;   // 无效窗口交由调用方判断（与 IsWindowValid 职责分离）
+		return false;   // 无效窗口交由调用方判断（与 IsWindowValid 职责分离）
 
-	if (m_bUseClientArea)
+	if (m_nSizeMode == ModeViewport)
 	{
-		CRect rc;
-		::GetClientRect(m_hWindowHandle, &rc);
-		nWidth = rc.Width();    // 客户区宽高
-		nHeight = rc.Height();
+		int nViewportW = 0, nViewportH = 0, nDW = 0, nDH = 0, nBW = 0, nBH = 0;
+		if (Chromium::Measure(m_hWindowHandle, nViewportW, nViewportH, nDW, nDH, nBW, nBH))
+		{
+			nWidth = nViewportW;
+			nHeight = nViewportH;
+			return true;
+		}
+		// 找不到渲染子窗口（非浏览器或页面未加载）时，退化为客户区口径取值
 	}
-	else
+
+	if (m_nSizeMode == ModeWindow)
 	{
 		CRect rc;
 		::GetWindowRect(m_hWindowHandle, &rc);
 		nWidth = rc.Width();    // 整个窗口宽高
 		nHeight = rc.Height();
 	}
+	else
+	{
+		CRect rc;
+		::GetClientRect(m_hWindowHandle, &rc);
+		nWidth = rc.Width();    // 客户区宽高
+		nHeight = rc.Height();
+	}
+	return true;
+}
+
+//按当前口径把父窗口物理尺寸换算成「用户口径下的显示值」
+void CWindowResizerDlg::WindowSizeToModeSize(int nWindowWidth, int nWindowHeight, int& nOutWidth, int& nOutHeight)
+{
+	nOutWidth = nWindowWidth;
+	nOutHeight = nWindowHeight;
+
+	if (m_hWindowHandle == NULL || !::IsWindow(m_hWindowHandle))
+		return;
+
+	if (m_nSizeMode == ModeWindow)
+		return;
+
+	CRect rcWin, rcClient;
+	::GetWindowRect(m_hWindowHandle, &rcWin);
+	::GetClientRect(m_hWindowHandle, &rcClient);
+	const int nBorderW = rcWin.Width() - rcClient.Width();
+	const int nBorderH = rcWin.Height() - rcClient.Height();
+
+	// 客户区口径：扣掉标题栏与边框
+	nOutWidth = nWindowWidth - nBorderW;
+	nOutHeight = nWindowHeight - nBorderH;
+
+	if (m_nSizeMode != ModeViewport)
+		return;
+
+	// 视口口径：再扣掉浏览器自身的 UI 占高（标签栏/地址栏/书签栏）
+	int nVW = 0, nVH = 0, nDW = 0, nDH = 0, nBW = 0, nBH = 0;
+	if (Chromium::Measure(m_hWindowHandle, nVW, nVH, nDW, nDH, nBW, nBH))
+	{
+		nOutWidth = nWindowWidth - nBorderW - nDW;
+		nOutHeight = nWindowHeight - nBorderH - nDH;
+	}
+}
+
+//按当前口径把「用户口径下的尺寸」换算成父窗口物理尺寸
+bool CWindowResizerDlg::ModeSizeToWindowSize(int nModeWidth, int nModeHeight, int& nOutWidth, int& nOutHeight)
+{
+	nOutWidth = nModeWidth;
+	nOutHeight = nModeHeight;
+
+	if (m_hWindowHandle == NULL || !::IsWindow(m_hWindowHandle))
+		return false;
+
+	if (m_nSizeMode == ModeWindow)
+		return true;
+
+	if (m_nSizeMode == ModeClient)
+	{
+		CSize sz = WindowSizeFromClientSize(nModeWidth, nModeHeight);
+		nOutWidth = sz.cx;
+		nOutHeight = sz.cy;
+		return true;
+	}
+
+	// 视口口径：按实测的 UI 占高与边框反推父窗口尺寸
+	return Chromium::ComputeWindowSizeForViewport(m_hWindowHandle, nModeWidth, nModeHeight, nOutWidth, nOutHeight);
+}
+
+//按当前口径设置窗口尺寸
+bool CWindowResizerDlg::ApplyTargetSize(int nWidth, int nHeight)
+{
+	if (!IsWindowValid() || nWidth <= 0 || nHeight <= 0)
+		return false;
+
+	if (m_nSizeMode == ModeViewport)
+	{
+		int nWinW = 0, nWinH = 0;
+		if (Chromium::ComputeWindowSizeForViewport(m_hWindowHandle, nWidth, nHeight, nWinW, nWinH))
+		{
+			::SetWindowPos(m_hWindowHandle, NULL, 0, 0, nWinW, nWinH, SWP_NOZORDER | SWP_NOMOVE);
+
+			// 立即回读渲染子窗口：Chromium 若因标签栏/侧边栏变化重排，会在本次调用内同步覆盖设置
+			if (Chromium::VerifyViewportSize(m_hWindowHandle, nWidth, nHeight, 2))
+				return true;
+
+			CString szMsg, szCaption;
+			szMsg.LoadString(IDS_VIEWPORT_FALLBACK);
+			szCaption.LoadString(IDS_RESTART_TIP_CAPTION);   // 复用既有的「提示」标题
+			::MessageBox(m_hWnd, szMsg, szCaption, MB_OK | MB_ICONINFORMATION);
+			SetSizeMode(ModeClient, true);   // 回弹：自动回退到客户区，避免「点了没反应」
+		}
+		else
+		{
+			// 找不到渲染子窗口（非浏览器或页面尚未加载）：静默回退客户区，不打扰用户
+			SetSizeMode(ModeClient, true);
+		}
+	}
+
+	int nTargetW = nWidth, nTargetH = nHeight;
+	if (!ModeSizeToWindowSize(nWidth, nHeight, nTargetW, nTargetH))
+		return false;
+
+	::SetWindowPos(m_hWindowHandle, NULL, 0, 0, nTargetW, nTargetH, SWP_NOZORDER | SWP_NOMOVE);
+	return true;
 }
 
 //物理像素转逻辑尺寸（100% DPI等效值）；仅当bUseLogical为true且DPI非96时才换算
@@ -394,19 +530,8 @@ void CWindowResizerDlg::CreateDynamicControls()
 	if (pFont != nullptr)
 		m_comboResolution.SetFont(pFont);
 
-	//初始化主流分辨率下拉框
-	static const TCHAR* szResolutions[] = {
-		// 按宽度升序排列（宽度相同时按高度升序）
-		_T("640x480"),   _T("800x600"),   _T("1024x768"),  _T("1152x864"),
-		_T("1280x720"),  _T("1280x800"),  _T("1280x960"),  _T("1280x1024"),
-		_T("1366x768"),  _T("1400x1050"), _T("1440x900"),  _T("1600x900"),
-		_T("1600x1200"), _T("1680x1050"), _T("1920x1080"), _T("1920x1200"),
-		_T("2048x1536"), _T("2560x1080"), _T("2560x1440"), _T("2560x1600"),
-		_T("2880x1800"), _T("3200x1800"), _T("3440x1440"), _T("3840x1600"),
-		_T("3840x2160")
-	};
-	for (int i = 0; i < _countof(szResolutions); i++)
-		m_comboResolution.AddString(szResolutions[i]);
+	//初始化主流分辨率下拉框：数据来自 ini 配置的当前档案（内置默认项由 CAppConfig 生成）
+	RefreshResolutionCombo();
 
 	//=================== 英文排版自适应 ===================
 	// 英文文案普遍长于中文，此处按实际文本宽度扩展标签控件，避免英文界面下文字被控件矩形裁剪；
@@ -444,10 +569,13 @@ void CWindowResizerDlg::CreateDynamicControls()
 
 void CWindowResizerDlg::UpdateSizeShow(int width,int height)
 {
+	//参数为「父窗口矩形」的物理尺寸，先按当前尺寸口径换算成用户口径下的值，再做 DPI 逻辑化
+	int nModeWidth = 0, nModeHeight = 0;
+	WindowSizeToModeSize(width, height, nModeWidth, nModeHeight);
+
 	CString szWidth,szHeight;
-	//参数为物理像素，按“窗口数据”区的显示开关换算后再显示
-	szWidth.Format(_T("%d"), PhysicalToLogical(width, m_bUseLogicalSizeView));
-	szHeight.Format(_T("%d"), PhysicalToLogical(height, m_bUseLogicalSizeView));
+	szWidth.Format(_T("%d"), PhysicalToLogical(nModeWidth, m_bUseLogicalSizeView));
+	szHeight.Format(_T("%d"), PhysicalToLogical(nModeHeight, m_bUseLogicalSizeView));
 	m_editShowCurWidth.SetWindowTextW(szWidth);
 	m_editShowCurHeight.SetWindowTextW(szHeight);
 }
@@ -455,7 +583,71 @@ void CWindowResizerDlg::UpdateSizeShow(int width,int height)
 
 void CWindowResizerDlg::OnBnClickedButtonFindWindow()
 {
+	// 按钮在拾取态已变成「取消拾取」，再点即退出：
+	// 这解决了旧版「开始拾取后点到自己窗口就退不出来」的问题
+	if (m_bPicking)
+	{
+		StopPicking(false);
+		return;
+	}
+	StartPicking();
+}
+
+//进入拾取状态：切十字光标、按钮文案改为「取消拾取」、提高轮询频率
+void CWindowResizerDlg::StartPicking()
+{
+	m_bPicking = true;
+
+	// 按钮文字实时切换：这是「正在拾取」最明确的反馈，同时提供退出入口
+	CString szBtn;
+	szBtn.LoadString(IDS_BTN_PICKING);
+	CWnd* pBtn = GetDlgItem(IDC_BUTTON_FIND_WINDOW);
+	if (pBtn != nullptr)
+		pBtn->SetWindowTextW(szBtn);
+
+	// 拾取期间把 1000ms 轮询提到 200ms：否则点击目标后最长要等 1 秒才出结果
+	SetTimer(1, 200, NULL);
+
+	// 40ms 强制重设光标：鼠标停在其他窗口上方时，对方的 WM_SETCURSOR 会把光标改回箭头，
+	// 单靠本窗口的 OnSetCursor 覆盖不到，故用一个轻量定时器兜底
+	SetTimer(3, 40, NULL);
+
+	::SetCursor(m_hCursorPick);
+}
+
+//退出拾取状态并复位所有视觉与定时器状态
+void CWindowResizerDlg::StopPicking(bool bAccepted)
+{
+	if (!m_bPicking)
+		return;
+
+	m_bPicking = false;
+	KillTimer(3);
+
+	// 恢复原有低频轮询节奏，避免常态化占用 200ms 定时器（200ms 只在拾取期需要）
 	SetTimer(1, 1000, NULL);
+
+	CString szBtn;
+	szBtn.LoadString(IDS_BTN_FIND);
+	CWnd* pBtn = GetDlgItem(IDC_BUTTON_FIND_WINDOW);
+	if (pBtn != nullptr)
+		pBtn->SetWindowTextW(szBtn);
+
+	::SetCursor(::LoadCursor(NULL, IDC_ARROW));
+
+	// bAccepted 为 true 时，目标窗口信息已在 OnTimer 里填好，这里只负责清理状态
+	UNREFERENCED_PARAMETER(bAccepted);
+}
+
+//拾取期间拦截光标：覆盖本窗口范围内的光标，避免子控件把光标改回箭头
+BOOL CWindowResizerDlg::OnSetCursor(CWnd* pWnd, UINT nHitTest, UINT message)
+{
+	if (m_bPicking && m_hCursorPick != nullptr)
+	{
+		::SetCursor(m_hCursorPick);
+		return TRUE;
+	}
+	return CDialogEx::OnSetCursor(pWnd, nHitTest, message);
 }
 
 
@@ -463,8 +655,25 @@ void CWindowResizerDlg::OnBnClickedButtonFindWindow()
 
 void CWindowResizerDlg::OnTimer(UINT_PTR nIDEvent)
 {
+	if (nIDEvent == 3)
+	{
+		// 拾取期间强制维持十字光标：鼠标移到其他窗口上方时对方的 WM_SETCURSOR 会覆盖它
+		if (m_bPicking && m_hCursorPick != nullptr)
+			::SetCursor(m_hCursorPick);
+		else
+			KillTimer(3);
+		return;   // 该定时器只服务于光标维持，不落到基类
+	}
+
 	if (nIDEvent == 1)
 	{
+		// Esc 取消拾取：拾取时本程序通常已失焦，收不到 WM_KEYDOWN，故读全局键态
+		if (m_bPicking && (::GetAsyncKeyState(VK_ESCAPE) & 0x8000) != 0)
+		{
+			StopPicking(false);
+			return;
+		}
+
 		CWnd* pWnd = GetForegroundWindow();
 		m_hWindowHandle = pWnd->GetSafeHwnd();
 		if (m_hWindowHandle != NULL && m_hWindowHandle != m_hWnd)//只有处于前台的窗口不是程序本身的窗口，才说明找到了
@@ -485,14 +694,33 @@ void CWindowResizerDlg::OnTimer(UINT_PTR nIDEvent)
 
 			m_nTargetDpi = GetWindowDpi();   //获取目标窗口所在显示器的DPI
 
-			//显示则按当前口径取值（客户区模式显示客户区尺寸）
-			int nW = 0, nH = 0;
-			GetTargetSizePhysical(nW, nH);
-			UpdateSizeShow(nW, nH);
+			//显示入口统一传「父窗口矩形」尺寸，由 UpdateSizeShow 按当前口径反算显示值
+			UpdateSizeShow(rect.Width(), rect.Height());
 			UpdateDpiInfoShow();
+			UpdateViewportModeAvailability();
 
 			IsEnableAllControls(IsWindowValid());
-			
+
+			StopPicking(true);   // 拾取成功：统一复位光标、按钮文案与定时器
+
+			// 按进程自动匹配档案：仅在用户显式开启「按进程自动切换」时才动作，默认关闭
+			if (m_config.IsAutoSwitchEnabled())
+			{
+				CString szProc;
+				if (Chromium::GetProcessImageName(m_hWindowHandle, szProc))
+				{
+					CString szMatched = m_config.MatchProfileByProcess(szProc);
+					const RESOLUTION_PROFILE* pCur = m_config.GetActiveProfile();
+					// 命中且与当前激活档案不同才切换，避免反复重填下拉框
+					if (!szMatched.IsEmpty() && (pCur == nullptr || szMatched != pCur->szName))
+					{
+						m_config.SetActiveProfile(szMatched);
+						RefreshProfileCombo();
+						RefreshResolutionCombo();
+					}
+				}
+			}
+
 			KillTimer(1);       //找到窗口之后停掉定时器
 		}
 		// 不管窗口是否有效，每次点击“查找窗口”按钮之后这些值都需要重新初始化
@@ -511,30 +739,28 @@ void CWindowResizerDlg::OnTimer(UINT_PTR nIDEvent)
 
 void CWindowResizerDlg::OnBnClickedButtonSetSize()
 {
-	if (IsWindowValid())
-	{
-		int nWidth, nHeight;
-		CString szWidth, szHeight;
-		m_editSetWidth.GetWindowTextW(szWidth);
-		m_editSetHeight.GetWindowTextW(szHeight);
-		nWidth = _ttoi(szWidth);
-		nHeight = _ttoi(szHeight);
-		if (nWidth == 0 || nHeight == 0)
-			return;
+	if (!IsWindowValid())
+		return;
 
-		//输入值在开启“设置大小”区的逻辑尺寸开关时是100% DPI等效值，需要换算成物理像素再设置
-		int nPhysicalWidth = LogicalToPhysical(nWidth, m_bUseLogicalSizeSet);
-		int nPhysicalHeight = LogicalToPhysical(nHeight, m_bUseLogicalSizeSet);
-		//客户区模式下，把目标客户区尺寸反推为 SetWindowPos 所需的窗口尺寸
-		CSize szSet(nPhysicalWidth, nPhysicalHeight);
-		if (m_bUseClientArea)
-			szSet = WindowSizeFromClientSize(nPhysicalWidth, nPhysicalHeight);
-		::SetWindowPos(m_hWindowHandle, NULL, 0, 0, szSet.cx, szSet.cy, SWP_NOZORDER | SWP_NOMOVE);
+	CString szWidth, szHeight;
+	m_editSetWidth.GetWindowTextW(szWidth);
+	m_editSetHeight.GetWindowTextW(szHeight);
+	int nWidth = _ttoi(szWidth);
+	int nHeight = _ttoi(szHeight);
+	if (nWidth == 0 || nHeight == 0)
+		return;
 
-		UpdateSizeShow(nPhysicalWidth, nPhysicalHeight);   //显示目标口径尺寸（即用户预期值）
-		m_bClickedSetPercentage = false;
-	}
+	//输入值在开启“设置大小”区的逻辑尺寸开关时是100% DPI等效值，需要换算成物理像素再设置
+	int nPhysicalWidth = LogicalToPhysical(nWidth, m_bUseLogicalSizeSet);
+	int nPhysicalHeight = LogicalToPhysical(nHeight, m_bUseLogicalSizeSet);
 
+	ApplyTargetSize(nPhysicalWidth, nPhysicalHeight);
+
+	//按实际结果刷新显示：视口口径发生回弹时会回退到客户区，此处能反映真实值
+	CRect rcWin;
+	::GetWindowRect(m_hWindowHandle, rcWin);
+	UpdateSizeShow(rcWin.Width(), rcWin.Height());
+	m_bClickedSetPercentage = false;
 }
 
 
@@ -612,13 +838,12 @@ void CWindowResizerDlg::OnBnClickedButtonSetPercentage()
 	//nWidth/nHeight为逻辑尺寸，需要换算成物理像素再设置
 	int nPhysicalWidth = LogicalToPhysical(nWidth, m_bUseLogicalSizeSet);
 	int nPhysicalHeight = LogicalToPhysical(nHeight, m_bUseLogicalSizeSet);
-	//客户区模式下，把目标客户区尺寸反推为 SetWindowPos 所需的窗口尺寸
-	CSize szSet(nPhysicalWidth, nPhysicalHeight);
-	if (m_bUseClientArea)
-		szSet = WindowSizeFromClientSize(nPhysicalWidth, nPhysicalHeight);
-	::SetWindowPos(m_hWindowHandle, NULL, 0, 0, szSet.cx, szSet.cy, SWP_NOZORDER | SWP_NOMOVE);
+	ApplyTargetSize(nPhysicalWidth, nPhysicalHeight);
 
-	UpdateSizeShow(nPhysicalWidth, nPhysicalHeight);   //显示目标口径尺寸（即用户预期值）
+	//按实际结果刷新显示：视口口径发生回弹时会回退到客户区，此处能反映真实值
+	CRect rcWin;
+	::GetWindowRect(m_hWindowHandle, rcWin);
+	UpdateSizeShow(rcWin.Width(), rcWin.Height());
 	m_bClickedSetPercentage = true;
 }
 
@@ -632,10 +857,10 @@ void CWindowResizerDlg::OnBnClickedButtonMaxSize()
 	m_pWnd->ShowWindow(SW_SHOWMAXIMIZED);
 	m_bIsSetMaxSize = true;
 
-	//重新获取窗口的大小（按当前尺寸口径）
-	int nW = 0, nH = 0;
-	GetTargetSizePhysical(nW, nH);
-	UpdateSizeShow(nW, nH);
+	//重新获取窗口的大小（传父窗口矩形，由 UpdateSizeShow 按当前口径反算）
+	CRect rcWin;
+	::GetWindowRect(m_hWindowHandle, rcWin);
+	UpdateSizeShow(rcWin.Width(), rcWin.Height());
 	m_bClickedSetPercentage = false;
 }
 
@@ -656,9 +881,9 @@ void CWindowResizerDlg::OnBnClickedButtonRestore()
 	OnBnClickedRadio100();
 
 	// 重新获取窗口大小并显示出来（还原后仍按当前尺寸口径显示）
-	int nW = 0, nH = 0;
-	GetTargetSizePhysical(nW, nH);
-	UpdateSizeShow(nW, nH);
+	CRect rcWin;
+	::GetWindowRect(m_hWindowHandle, rcWin);
+	UpdateSizeShow(rcWin.Width(), rcWin.Height());
 	m_bClickedSetPercentage = false;
 }
 
@@ -674,12 +899,12 @@ void CWindowResizerDlg::OnBnClickedCheckDpi100View()
 {
 	m_bUseLogicalSizeView = (m_checkDpiView.GetCheck() == BST_CHECKED);
 
-	//切换后刷新“窗口数据”处当前大小的显示（按当前尺寸口径）
+	//切换后刷新“窗口数据”处当前大小的显示（传父窗口矩形，按当前口径反算）
 	if (IsWindowValid())
 	{
-		int nW = 0, nH = 0;
-		GetTargetSizePhysical(nW, nH);
-		UpdateSizeShow(nW, nH);
+		CRect rcWin;
+		::GetWindowRect(m_hWindowHandle, rcWin);
+		UpdateSizeShow(rcWin.Width(), rcWin.Height());
 	}
 }
 
@@ -706,21 +931,190 @@ void CWindowResizerDlg::OnCbnSelchangeComboResolution()
 	m_editSetHeight.SetWindowTextW(szHeight);
 }
 
-//勾选/取消「整个窗口（含边框）」开关时，切换尺寸口径并刷新显示
-void CWindowResizerDlg::OnBnClickedCheckClientArea()
+//切换尺寸口径：同步下拉框、刷新显示、按需调整「浏览器视口」项
+void CWindowResizerDlg::SetSizeMode(int nMode, bool bSyncCombo)
 {
-	// 勾选=按整个窗口，不勾=按客户区，故此处对勾选状态取反
-	m_bUseClientArea = (m_checkClientArea.GetCheck() != BST_CHECKED);
+	// 非 Chromium 窗口（或找不到渲染子窗口）时禁止进入视口口径
+	if (nMode == ModeViewport && Chromium::FindRenderWidget(m_hWindowHandle) == NULL)
+		nMode = ModeClient;
 
-	//口径变化后，按比例缩放的采样基准失效，下次按比例缩放时重新采样
+	m_nSizeMode = nMode;
+
+	if (bSyncCombo && m_comboSizeMode.GetSafeHwnd() != NULL)
+		m_comboSizeMode.SetCurSel(nMode);   // 下拉项下标与枚举值严格一一对应
+
+	// 口径变化后按比例缩放的采样基准失效，下次按比例缩放时重新采样
 	m_bClickedSetPercentage = false;
 
-	//切换后刷新「窗口数据」处当前尺寸的显示
+	UpdateViewportInfoShow();
+
+	// 切换后刷新「窗口数据」处当前尺寸的显示：同一窗口在不同口径下应显示不同数字
 	if (IsWindowValid())
 	{
-		int nW = 0, nH = 0;
-		GetTargetSizePhysical(nW, nH);
-		UpdateSizeShow(nW, nH);
+		CRect rcWin;
+		::GetWindowRect(m_hWindowHandle, rcWin);
+		UpdateSizeShow(rcWin.Width(), rcWin.Height());
+	}
+}
+
+//根据目标窗口是否为 Chromium 决定「浏览器视口」项是否可选
+//说明：CComboBox 无法单独把某一项置灰（需自绘），故采用「不可用时移除该项」的等效做法，
+//既达到「非浏览器下不能选视口口径」的效果，又无需引入自绘代码
+void CWindowResizerDlg::UpdateViewportModeAvailability()
+{
+	if (m_comboSizeMode.GetSafeHwnd() == NULL)
+		return;
+
+	const bool bAvailable = (Chromium::FindRenderWidget(m_hWindowHandle) != NULL);
+	const int nCount = m_comboSizeMode.GetCount();
+
+	if (bAvailable && nCount < 3)
+	{
+		CString szViewport;
+		szViewport.LoadString(IDS_MODE_VIEWPORT);
+		m_comboSizeMode.AddString(szViewport);
+	}
+	else if (!bAvailable && nCount >= 3)
+	{
+		// 索引 2 固定对应 ModeViewport；移除前先退出该口径，避免选中项指向已删除的索引
+		if (m_nSizeMode == ModeViewport)
+			SetSizeMode(ModeClient, true);
+		m_comboSizeMode.DeleteString(2);
+	}
+
+	m_comboSizeMode.SetCurSel(m_nSizeMode);
+	UpdateViewportInfoShow();
+}
+
+//重新填充分辨率下拉框
+void CWindowResizerDlg::RefreshResolutionCombo()
+{
+	if (m_comboResolution.GetSafeHwnd() == NULL)
+		return;
+
+	m_comboResolution.ResetContent();
+	m_currentResolutions.clear();
+
+	const RESOLUTION_PROFILE* pProfile = m_config.GetActiveProfile();
+	if (pProfile == nullptr)
+		return;
+
+	m_currentResolutions = pProfile->resolutions;
+	for (size_t i = 0; i < m_currentResolutions.size(); i++)
+	{
+		CString szItem;
+		// 必须是半角小写 x：OnCbnSelchangeComboResolution 依赖它拆分宽高
+		szItem.Format(_T("%dx%d"), m_currentResolutions[i].cx, m_currentResolutions[i].cy);
+		m_comboResolution.AddString(szItem);
+	}
+	m_comboResolution.SetCurSel(-1);
+}
+
+//重新填充档案下拉框并选中当前激活档案
+void CWindowResizerDlg::RefreshProfileCombo()
+{
+	if (m_comboProfile.GetSafeHwnd() == NULL)
+		return;
+
+	m_comboProfile.ResetContent();
+	std::vector<CString> names = m_config.GetProfileNames();
+	for (size_t i = 0; i < names.size(); i++)
+		m_comboProfile.AddString(names[i]);
+
+	const RESOLUTION_PROFILE* pProfile = m_config.GetActiveProfile();
+	if (pProfile != nullptr)
+		m_comboProfile.SelectString(-1, pProfile->szName);
+}
+
+//刷新「浏览器视口测量」区文本
+void CWindowResizerDlg::UpdateViewportInfoShow()
+{
+	if (m_staticViewportInfo.GetSafeHwnd() == NULL)
+		return;
+
+	CString szText(_T("--"));
+	if (m_hWindowHandle != NULL && ::IsWindow(m_hWindowHandle))
+	{
+		int nVW = 0, nVH = 0, nDW = 0, nDH = 0, nBW = 0, nBH = 0;
+		if (Chromium::Measure(m_hWindowHandle, nVW, nVH, nDW, nDH, nBW, nBH))
+		{
+			// 实测的 UI 占高与边框，便于用户判断反推是否合理（数字与语言无关，无需本地化）
+			szText.Format(_T("UI +%dpx  Border %dx%d"), nDH, nBW, nBH);
+		}
+	}
+	m_staticViewportInfo.SetWindowTextW(szText);
+}
+
+//选择尺寸口径
+void CWindowResizerDlg::OnCbnSelchangeComboSizeMode()
+{
+	int nSel = m_comboSizeMode.GetCurSel();
+	if (nSel == CB_ERR)
+		return;
+	SetSizeMode(nSel, false);
+}
+
+//手动切换分辨率档案
+void CWindowResizerDlg::OnCbnSelchangeComboProfile()
+{
+	int nSel = m_comboProfile.GetCurSel();
+	if (nSel == CB_ERR)
+		return;
+
+	CString szName;
+	m_comboProfile.GetLBText(nSel, szName);
+	m_config.SetActiveProfile(szName);
+	RefreshResolutionCombo();
+
+	// 用户一旦手动选过就关掉自动切换：否则下一秒定时器又切回去，等于下拉框失灵
+	if (m_config.IsAutoSwitchEnabled())
+	{
+		m_config.SetAutoSwitchEnabled(false);
+		m_checkAutoSwitch.SetCheck(BST_UNCHECKED);
+		m_config.Save();
+	}
+}
+
+//勾选/取消「按进程自动切换」
+void CWindowResizerDlg::OnBnClickedCheckAutoswitch()
+{
+	m_config.SetAutoSwitchEnabled(m_checkAutoSwitch.GetCheck() == BST_CHECKED);
+	m_config.Save();
+}
+
+//把当前分辨率列表与当前目标进程绑定保存到当前档案
+void CWindowResizerDlg::OnBnClickedButtonSaveProfile()
+{
+	const RESOLUTION_PROFILE* pProfile = m_config.GetActiveProfile();
+	if (pProfile == nullptr)
+		return;
+
+	// 先复制出名字与绑定，避免后续写入使内部 vector 扩容而导致指针失效
+	CString szProfileName = pProfile->szName;
+	CString szProcess = pProfile->szProcess;
+
+	// 绑定「当前目标窗口的进程名」；目标窗口无效时保留原绑定不变
+	if (m_hWindowHandle != NULL && ::IsWindow(m_hWindowHandle))
+	{
+		CString szCur;
+		if (Chromium::GetProcessImageName(m_hWindowHandle, szCur))
+			szProcess = szCur;   // 单进程覆盖；仍可在 ini 里手工改回逗号分隔的多进程
+	}
+
+	CString szCaption;
+	szCaption.LoadString(IDS_RESTART_TIP_CAPTION);
+
+	if (m_config.SaveProfile(szProfileName, szProcess, m_currentResolutions))
+	{
+		CString szMsg;
+		szMsg.LoadString(IDS_PROFILE_SAVED);
+		::MessageBox(m_hWnd, szMsg, szCaption, MB_OK | MB_ICONINFORMATION);
+	}
+	else
+	{
+		CString szMsg;
+		szMsg.LoadString(IDS_ERR_INI_WRITE);
+		::MessageBox(m_hWnd, szMsg, szCaption, MB_OK | MB_ICONWARNING);
 	}
 }
 
@@ -777,7 +1171,10 @@ void CWindowResizerDlg::IsEnableAllControls(bool bIsEnable)
 	m_checkDpiView.EnableWindow(bIsEnable);
 	m_checkDpiSet.EnableWindow(bIsEnable);
 	m_comboResolution.EnableWindow(bIsEnable);
-	m_checkClientArea.EnableWindow(bIsEnable);   //未选中窗口时禁用整个窗口开关
+	m_comboSizeMode.EnableWindow(bIsEnable);     //未选中窗口时禁用尺寸口径下拉框
+	m_comboProfile.EnableWindow(bIsEnable);      //未选中窗口时禁用档案下拉框
+	m_checkAutoSwitch.EnableWindow(bIsEnable);   //未选中窗口时禁用自动切换开关
+	m_btnSaveProfile.EnableWindow(bIsEnable);    //未选中窗口时禁用保存档案按钮
 	SetMaxSizeButtonEnable();
 	SetPercentageEditEnable();
 	UpdateDpiInfoShow();

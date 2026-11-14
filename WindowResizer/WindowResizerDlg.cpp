@@ -71,8 +71,6 @@ void CWindowResizerDlg::DoDataExchange(CDataExchange* pDX)
 	DDX_Control(pDX, IDC_EDIT_SET_HEIGHT, m_editSetHeight);
 	DDX_Control(pDX, IDC_EDIT_PERCENTAGE_CUSTOM, m_editSetPercentage);
 	DDX_Control(pDX, IDC_COMBO_SIZE_MODE, m_comboSizeMode);
-	DDX_Control(pDX, IDC_COMBO_PROFILE, m_comboProfile);
-	DDX_Control(pDX, IDC_CHECK_AUTOSWITCH, m_checkAutoSwitch);
 	DDX_Control(pDX, IDC_BUTTON_SAVE_PROFILE, m_btnSaveProfile);
 	DDX_Control(pDX, IDC_STATIC_VIEWPORT_INFO, m_staticViewportInfo);
 	DDX_Radio(pDX, IDC_RADIO_50, m_nRadioSelect);
@@ -100,8 +98,6 @@ BEGIN_MESSAGE_MAP(CWindowResizerDlg, CDialogEx)
 	ON_BN_CLICKED(IDC_CHECK_DPI100_SET, &CWindowResizerDlg::OnBnClickedCheckDpi100Set)
 	ON_CBN_SELCHANGE(IDC_COMBO_RESOLUTION, &CWindowResizerDlg::OnCbnSelchangeComboResolution)
 	ON_CBN_SELCHANGE(IDC_COMBO_SIZE_MODE, &CWindowResizerDlg::OnCbnSelchangeComboSizeMode)
-	ON_CBN_SELCHANGE(IDC_COMBO_PROFILE, &CWindowResizerDlg::OnCbnSelchangeComboProfile)
-	ON_BN_CLICKED(IDC_CHECK_AUTOSWITCH, &CWindowResizerDlg::OnBnClickedCheckAutoswitch)
 	ON_BN_CLICKED(IDC_BUTTON_SAVE_PROFILE, &CWindowResizerDlg::OnBnClickedButtonSaveProfile)
 	ON_MESSAGE(WM_PICKER_RESULT, &CWindowResizerDlg::OnOverlayPickWindow)
 END_MESSAGE_MAP()
@@ -177,8 +173,7 @@ BOOL CWindowResizerDlg::OnInitDialog()
 	//资源文件未包含以下新增控件，这里在运行时动态创建，避免修改资源的编码
 	CreateDynamicControls();
 
-	RefreshProfileCombo();
-	m_checkAutoSwitch.SetCheck(m_config.IsAutoSwitchEnabled() ? BST_CHECKED : BST_UNCHECKED);
+	ResolveProfileForTarget();   // 启动时按默认档案填充，拾取窗口后再按进程切换
 
 	IsEnableAllControls(false);   //初始状态未选中窗口所有控件都不可用
 
@@ -482,7 +477,7 @@ void CWindowResizerDlg::CreateDynamicControls()
 
 	//=================== “窗口数据”分组框 ===================
 	//“当前缩放”提示，放在“窗口数据”分组框底行左侧
-	rc.SetRect(18, 79, 80, 88);
+	rc.SetRect(18, 100, 80, 109);
 	MapDialogRect(&rc);
 	CString szDpiInfoNone;
 	szDpiInfoNone.LoadString(IDS_DPI_INFO_NONE);
@@ -492,7 +487,7 @@ void CWindowResizerDlg::CreateDynamicControls()
 		m_staticDpiInfo.SetFont(pFont);
 
 	//“窗口数据”区的100% DPI开关（仅控制显示），放在“窗口数据”分组框底行右侧
-	rc.SetRect(96, 78, 160, 89);
+	rc.SetRect(96, 99, 160, 110);
 	MapDialogRect(&rc);
 	CString szDpiView;
 	szDpiView.LoadString(IDS_DPI100_VIEW);
@@ -503,7 +498,7 @@ void CWindowResizerDlg::CreateDynamicControls()
 
 	//=================== “设置大小”分组框 ===================
 	//“设置大小”区的100% DPI开关（控制输入与设置），放在“设置大小”框宽度编辑框右侧
-	rc.SetRect(110, 118, 164, 129);
+	rc.SetRect(110, 152, 164, 163);
 	MapDialogRect(&rc);
 	CString szDpiSet;
 	szDpiSet.LoadString(IDS_DPI100_SET);
@@ -513,7 +508,7 @@ void CWindowResizerDlg::CreateDynamicControls()
 		m_checkDpiSet.SetFont(pFont);
 
 	//“设置为主流分辨率”标签，放在“设置大小”分组框底行左侧
-	rc.SetRect(18, 160, 92, 169);
+	rc.SetRect(18, 210, 92, 219);
 	MapDialogRect(&rc);
 	CString szResLabel;
 	szResLabel.LoadString(IDS_RESOLUTION_LABEL);
@@ -523,7 +518,7 @@ void CWindowResizerDlg::CreateDynamicControls()
 		m_staticResLabel.SetFont(pFont);
 
 	//主流分辨率下拉框，放在标签右侧
-	rc.SetRect(96, 159, 164, 214);
+	rc.SetRect(96, 209, 164, 264);
 	MapDialogRect(&rc);
 	m_comboResolution.Create(
 		WS_CHILD | WS_VISIBLE | WS_VSCROLL | WS_TABSTOP | CBS_DROPDOWNLIST,
@@ -691,23 +686,10 @@ LRESULT CWindowResizerDlg::OnOverlayPickWindow(WPARAM wParam, LPARAM lParam)
 	{
 		FillTargetWindowInfo(hTarget);
 
-		// 按进程自动匹配档案：仅在用户显式开启「按进程自动切换」时才动作，默认关闭
-		if (m_config.IsAutoSwitchEnabled())
-		{
-			CString szProc;
-			if (Chromium::GetProcessImageName(hTarget, szProc))
-			{
-				CString szMatched = m_config.MatchProfileByProcess(szProc);
-				const RESOLUTION_PROFILE* pCur = m_config.GetActiveProfile();
-				// 命中且与当前激活档案不同才切换，避免反复重填下拉框
-				if (!szMatched.IsEmpty() && (pCur == nullptr || szMatched != pCur->szName))
-				{
-					m_config.SetActiveProfile(szMatched);
-					RefreshProfileCombo();
-					RefreshResolutionCombo();
-				}
-			}
-		}
+		// 按目标进程切换到对应档案（每个 exe 各自一份分辨率列表），
+		// 未记录过的进程回落到默认档案，等用户保存时才为它新建节
+		ResolveProfileForTarget();
+		RefreshResolutionCombo();
 
 		StopPicking(true);
 	}
@@ -1007,20 +989,22 @@ void CWindowResizerDlg::RefreshResolutionCombo()
 	m_comboResolution.SetCurSel(-1);
 }
 
-//重新填充档案下拉框并选中当前激活档案
-void CWindowResizerDlg::RefreshProfileCombo()
+//按当前目标窗口的进程名匹配并激活对应档案；无匹配时回落到默认档案
+void CWindowResizerDlg::ResolveProfileForTarget()
 {
-	if (m_comboProfile.GetSafeHwnd() == NULL)
+	// 没有有效目标窗口时保持当前激活档案不变
+	if (m_hWindowHandle == NULL || !::IsWindow(m_hWindowHandle))
 		return;
 
-	m_comboProfile.ResetContent();
-	std::vector<CString> names = m_config.GetProfileNames();
-	for (size_t i = 0; i < names.size(); i++)
-		m_comboProfile.AddString(names[i]);
+	CString szProc;
+	if (!Chromium::GetProcessImageName(m_hWindowHandle, szProc))
+		return;
 
-	const RESOLUTION_PROFILE* pProfile = m_config.GetActiveProfile();
-	if (pProfile != nullptr)
-		m_comboProfile.SelectString(-1, pProfile->szName);
+	// 命中则切到该进程专属档案；未命中时保持默认档案，
+	// 等用户点「保存到当前程序」时才以该进程名新建节（见 OnBnClickedButtonSaveProfile）
+	CString szMatched = m_config.MatchProfileByProcess(szProc);
+	if (!szMatched.IsEmpty())
+		m_config.SetActiveProfile(szMatched);
 }
 
 //刷新「浏览器视口测量」区文本
@@ -1051,35 +1035,7 @@ void CWindowResizerDlg::OnCbnSelchangeComboSizeMode()
 	SetSizeMode(nSel, false);
 }
 
-//手动切换分辨率档案
-void CWindowResizerDlg::OnCbnSelchangeComboProfile()
-{
-	int nSel = m_comboProfile.GetCurSel();
-	if (nSel == CB_ERR)
-		return;
-
-	CString szName;
-	m_comboProfile.GetLBText(nSel, szName);
-	m_config.SetActiveProfile(szName);
-	RefreshResolutionCombo();
-
-	// 用户一旦手动选过就关掉自动切换：否则下一秒定时器又切回去，等于下拉框失灵
-	if (m_config.IsAutoSwitchEnabled())
-	{
-		m_config.SetAutoSwitchEnabled(false);
-		m_checkAutoSwitch.SetCheck(BST_UNCHECKED);
-		m_config.Save();
-	}
-}
-
-//勾选/取消「按进程自动切换」
-void CWindowResizerDlg::OnBnClickedCheckAutoswitch()
-{
-	m_config.SetAutoSwitchEnabled(m_checkAutoSwitch.GetCheck() == BST_CHECKED);
-	m_config.Save();
-}
-
-//把当前分辨率列表与当前目标进程绑定保存到当前档案
+//把当前分辨率列表与当前目标进程绑定保存，必要时以进程名新建档案节
 void CWindowResizerDlg::OnBnClickedButtonSaveProfile()
 {
 	const RESOLUTION_PROFILE* pProfile = m_config.GetActiveProfile();
@@ -1090,12 +1046,52 @@ void CWindowResizerDlg::OnBnClickedButtonSaveProfile()
 	CString szProfileName = pProfile->szName;
 	CString szProcess = pProfile->szProcess;
 
-	// 绑定「当前目标窗口的进程名」；目标窗口无效时保留原绑定不变
+	// 目标窗口有效时，把节名与绑定都换成它的进程映像名：
+	// 这样每个 exe 自动拥有独立的 [Profile:exe名] 节，互不共用
 	if (m_hWindowHandle != NULL && ::IsWindow(m_hWindowHandle))
 	{
 		CString szCur;
-		if (Chromium::GetProcessImageName(m_hWindowHandle, szCur))
-			szProcess = szCur;   // 单进程覆盖；仍可在 ini 里手工改回逗号分隔的多进程
+		if (Chromium::GetProcessImageName(m_hWindowHandle, szCur) && !szCur.IsEmpty())
+		{
+			szProcess = szCur;      // 单进程覆盖；仍可在 ini 里手工改回逗号分隔的多进程
+			szProfileName = szCur;  // 节名同步取进程名，实现按 exe 分节
+		}
+	}
+
+	// 把「修改大小」里当前输入的尺寸追加进本档案的分辨率列表。
+	// 只追加用户此刻输入的这一条，不批量重建内置主流分辨率——
+	// 用户期望的是「设置了一个新尺寸后点保存就能记住它」。
+	{
+		CString szInputW, szInputH;
+		m_editSetWidth.GetWindowTextW(szInputW);
+		m_editSetHeight.GetWindowTextW(szInputH);
+		const int nInputW = _ttoi(szInputW);
+		const int nInputH = _ttoi(szInputH);
+
+		if (nInputW > 0 && nInputH > 0)
+		{
+			// 输入框的数值含义随「100% DPI」开关变化，统一换算成逻辑值再存，
+			// 使 ini 中的 ResolutionN 始终是 100% DPI 等效值，与既有条目口径一致
+			const int nLogicalW = PhysicalToLogical(nInputW, m_bUseLogicalSizeSet);
+			const int nLogicalH = PhysicalToLogical(nInputH, m_bUseLogicalSizeSet);
+
+			if (nLogicalW > 0 && nLogicalH > 0)
+			{
+				bool bExists = false;
+				for (size_t i = 0; i < m_currentResolutions.size(); ++i)
+				{
+					if (m_currentResolutions[i].cx == nLogicalW &&
+						m_currentResolutions[i].cy == nLogicalH)
+					{
+						bExists = true;
+						break;
+					}
+				}
+				// 已存在则不重复追加；排序与去重由 SaveProfile 内部的 NormalizeResolutions 负责
+				if (!bExists)
+					m_currentResolutions.push_back(CSize(nLogicalW, nLogicalH));
+			}
+		}
 	}
 
 	CString szCaption;
@@ -1103,14 +1099,31 @@ void CWindowResizerDlg::OnBnClickedButtonSaveProfile()
 
 	if (m_config.SaveProfile(szProfileName, szProcess, m_currentResolutions))
 	{
+		// 保存后立即用内存中的最新结果重建两个下拉框，避免界面与 ini 不同步；
+		// 放在弹框之前刷新，用户关掉提示框时看到的就是已更新的状态
+		RefreshResolutionCombo();
+
 		CString szMsg;
 		szMsg.LoadString(IDS_PROFILE_SAVED);
+		szMsg += _T("\r\n");
+		szMsg += CAppConfig::GetIniPath();   // 让用户明确知道文件写到了哪里
 		::MessageBox(m_hWnd, szMsg, szCaption, MB_OK | MB_ICONINFORMATION);
 	}
 	else
 	{
 		CString szMsg;
-		szMsg.LoadString(IDS_ERR_INI_WRITE);
+		if (m_currentResolutions.empty())
+		{
+			// 分辨率列表为空时 SaveProfile 会直接拒绝，这与写盘失败是两回事，需分别提示
+			szMsg = _T("当前档案没有可保存的分辨率。\r\n")
+				_T("请检查 WindowResizer.ini 中该档案的 ResolutionN 项是否有效。");
+		}
+		else
+		{
+			szMsg.LoadString(IDS_ERR_INI_WRITE);
+			szMsg += _T("\r\n");
+			szMsg += CAppConfig::GetIniPath();   // 带出路径，便于排查占用或权限问题
+		}
 		::MessageBox(m_hWnd, szMsg, szCaption, MB_OK | MB_ICONWARNING);
 	}
 }
@@ -1169,9 +1182,7 @@ void CWindowResizerDlg::IsEnableAllControls(bool bIsEnable)
 	m_checkDpiSet.EnableWindow(bIsEnable);
 	m_comboResolution.EnableWindow(bIsEnable);
 	m_comboSizeMode.EnableWindow(bIsEnable);     //未选中窗口时禁用尺寸口径下拉框
-	m_comboProfile.EnableWindow(bIsEnable);      //未选中窗口时禁用档案下拉框
-	m_checkAutoSwitch.EnableWindow(bIsEnable);   //未选中窗口时禁用自动切换开关
-	m_btnSaveProfile.EnableWindow(bIsEnable);    //未选中窗口时禁用保存档案按钮
+	m_btnSaveProfile.EnableWindow(bIsEnable);    //未选中窗口时禁用保存按钮
 	SetMaxSizeButtonEnable();
 	SetPercentageEditEnable();
 	UpdateDpiInfoShow();

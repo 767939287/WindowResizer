@@ -11,11 +11,18 @@ namespace
 	// 整屏压暗用的颜色：BGRA 全 0 为黑色，alpha=110 控制压暗程度（约 43%）
 	const DWORD kDarkPixel = 0x6E000000;
 
-	// 目标窗口描边色：BGRA 形式，A=255、R=255、G=120、B=0（橙色）
-	const DWORD kEdgePixel = 0xFF0078FF;
+	// 目标窗口描边色：BGRA 形式，B=0、G=120、R=255、A=255（橙色）
+	// 注意：DWORD 按小端解析，最低字节是 B；原值 0xFF0078FF 实际画出来是蓝色
+	const DWORD kEdgePixel = 0xFFFF7800;
 
 	// 描边宽度（像素）
 	const int kEdgeWidth = 2;
+
+	// 目标窗口挖空区的像素：alpha=1 而非 0。
+	// 分层窗口 alpha=0 的像素区域不参与命中测试，鼠标消息会穿透到下层窗口，
+	// 导致点击目标窗口时蒙版收不到 WM_LBUTTONDOWN，从而无法完成拾取。
+	// alpha=1 的视觉差异（1/255 不透明度）肉眼几乎不可见，但能正常接收鼠标消息。
+	const DWORD kHolePixel = 0x00000001;
 
 	// Z 序遍历的防御上限，避免异常窗口链导致死循环
 	const int kMaxWindowWalk = 10000;
@@ -58,6 +65,7 @@ bool CPickerOverlay::Begin(CWnd* pSink)
 	m_pSink = pSink;
 	m_hSinkWnd = pSink->GetSafeHwnd();
 	m_hTarget = nullptr;
+	m_bLButtonWasDown = false;
 
 	// 用虚拟屏幕而非主屏：多显示器时原点可能为负（左侧副屏），写死 (0,0) 会漏掉那块区域
 	m_sizeVirtual.cx = ::GetSystemMetrics(SM_CXVIRTUALSCREEN);
@@ -107,6 +115,7 @@ void CPickerOverlay::End()
 	m_hTarget = nullptr;
 	m_pSink = nullptr;
 	m_hSinkWnd = nullptr;
+	m_bLButtonWasDown = false;
 }
 
 bool CPickerOverlay::EnsureDib()
@@ -196,9 +205,10 @@ void CPickerOverlay::RedrawMask()
 		int R = rc.right - m_ptOrigin.x;
 		int B = rc.bottom - m_ptOrigin.y;
 
-		// 挖空：alpha 置 0 表示完全透明，目标窗口保持原始亮度（实时内容，不是截图快照）
+		// 挖空：目标窗口保持原始亮度（实时内容，不是截图快照）。
+		// 使用 kHolePixel（alpha=1）而非 0，避免鼠标穿透导致点击丢失
 		for (int y = T; y < B; ++y)
-			FillSpan(y, L, R, 0);
+			FillSpan(y, L, R, kHolePixel);
 
 		// 描边：在挖空区内侧四边各画 kEdgeWidth 像素，形成橙色高亮框
 		for (int y = T; y < T + kEdgeWidth; ++y)
@@ -210,6 +220,21 @@ void CPickerOverlay::RedrawMask()
 			FillSpan(y, L, L + kEdgeWidth, kEdgePixel);
 			FillSpan(y, R - kEdgeWidth, R, kEdgePixel);
 		}
+	}
+
+	// 主对话框区域挖空：此处刻意用 alpha=0（与上面的目标窗口挖空区相反）。
+	// alpha=0 会让鼠标穿透到主对话框，使用户能直接点到「取消拾取」按钮退出，
+	// 而不必被迫按 Esc；同时该区域不被压暗，用户能看清自己的程序。
+	if (m_hSinkWnd != NULL && ::IsWindow(m_hSinkWnd))
+	{
+		CRect rcSink;
+		::GetWindowRect(m_hSinkWnd, &rcSink);
+		const int nL = rcSink.left - m_ptOrigin.x;
+		const int nT = rcSink.top - m_ptOrigin.y;
+		const int nR = rcSink.right - m_ptOrigin.x;
+		const int nB = rcSink.bottom - m_ptOrigin.y;
+		for (int y = nT; y < nB; ++y)
+			FillSpan(y, nL, nR, 0);
 	}
 
 	// 提交到分层窗口：BLENDFUNCTION 使用逐像素 alpha
@@ -293,10 +318,14 @@ void CPickerOverlay::OnMouseMove(UINT nFlags, CPoint point)
 void CPickerOverlay::OnLButtonDown(UINT nFlags, CPoint point)
 {
 	UNREFERENCED_PARAMETER(nFlags);
-	UNREFERENCED_PARAMETER(point);
 
-	// 先把结果同步回传（End 会销毁窗口），再关闭蒙版
-	HWND hPick = m_hTarget;
+	// 回传前按点击位置重算一次：若鼠标未产生移动事件，m_hTarget 可能仍为空
+	CPoint ptScreen = point;
+	ClientToScreen(&ptScreen);
+	HWND hPick = WindowFromPointTopMost(ptScreen);
+	if (hPick == NULL)
+		hPick = m_hTarget;   // 兜底
+
 	CWnd* pSink = m_pSink;
 	End();
 
@@ -340,6 +369,37 @@ void CPickerOverlay::OnTimer(UINT_PTR nIDEvent)
 			if (pSink != nullptr && pSink->GetSafeHwnd() != NULL)
 				pSink->SendMessage(WM_PICKER_RESULT, 0, 0);
 			return;
+		}
+
+		// 用轮询而非依赖 WM_LBUTTONDOWN：分层窗口按像素 alpha 做命中测试，
+		// 挖空区（目标窗口）的点击会被判定为穿透，OnLButtonDown 根本收不到，
+		// 导致拾取永远无法完成。这里直接读全局左键状态即可绕开命中测试。
+		const bool bDownNow = (::GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
+		const bool bPressed = bDownNow && !m_bLButtonWasDown;
+		m_bLButtonWasDown = bDownNow;
+
+		if (bPressed)
+		{
+			POINT pt = { 0, 0 };
+			::GetCursorPos(&pt);
+
+			// 挖空区穿透后，WindowFromPoint 返回的正是用户真正点到的那个窗口
+			HWND hHit = ::WindowFromPoint(pt);
+			if (hHit != NULL)
+				hHit = ::GetAncestor(hHit, GA_ROOT);   // 子控件归到其顶层窗口
+
+			// 命中主对话框（含其子控件）时不拾取，交给「取消拾取」按钮等自行处理
+			const bool bOnSink = (hHit != NULL &&
+				(hHit == m_hSinkWnd || ::IsChild(m_hSinkWnd, hHit)));
+
+			if (hHit != NULL && hHit != m_hWnd && !bOnSink)
+			{
+				CWnd* pSink = m_pSink;
+				End();
+				if (pSink != nullptr && pSink->GetSafeHwnd() != NULL)
+					pSink->SendMessage(WM_PICKER_RESULT, reinterpret_cast<WPARAM>(hHit), 0);
+				return;
+			}
 		}
 
 		// 鼠标停在其他窗口上方时对方的 WM_SETCURSOR 会把光标改回箭头，这里周期性拉回

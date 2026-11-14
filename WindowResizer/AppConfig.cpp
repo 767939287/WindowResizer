@@ -4,7 +4,11 @@
 #include "stdafx.h"
 #include "AppConfig.h"
 
+#include <shlobj.h>   // SHGetFolderPath：取 %APPDATA% 的规范方式
+
 #include <algorithm>
+
+#pragma comment(lib, "shell32.lib")
 
 namespace
 {
@@ -63,18 +67,31 @@ CAppConfig::~CAppConfig()
 {
 }
 
-//取配置文件绝对路径（exe 所在目录 + WindowResizer.ini）
+/// 取配置文件绝对路径（%APPDATA%\WindowResizer\WindowResizer.ini）。
+/// 目录不存在时会一并创建，确保后续 Save() 能成功写入。
+/// %APPDATA% 取不到时回退到 exe 同目录，保证任何情况下都能返回可用路径。
 CString CAppConfig::GetIniPath()
 {
 	TCHAR szPath[MAX_PATH] = { 0 };
-	::GetModuleFileName(NULL, szPath, MAX_PATH);
+	if (FAILED(::SHGetFolderPath(NULL, CSIDL_APPDATA, NULL, SHGFP_TYPE_CURRENT, szPath)))
+	{
+		// 极端环境（无用户配置文件）下回退到 exe 目录，避免返回空路径导致后续读写全失败
+		::GetModuleFileName(NULL, szPath, MAX_PATH);
+		CString szFallback(szPath);
+		int nPos = szFallback.ReverseFind(_T('\\'));
+		if (nPos >= 0)
+			szFallback = szFallback.Left(nPos + 1);
+		szFallback += _T("WindowResizer.ini");
+		return szFallback;
+	}
 
 	CString szDir(szPath);
-	int nPos = szDir.ReverseFind(_T('\\'));
-	if (nPos >= 0)
-		szDir = szDir.Left(nPos + 1);
+	szDir += _T("\\WindowResizer");
 
-	szDir += _T("WindowResizer.ini");
+	// 目录已存在时 CreateDirectory 返回失败但无需处理，这里只保证首次运行时能建出来
+	::CreateDirectory(szDir, NULL);
+
+	szDir += _T("\\WindowResizer.ini");
 	return szDir;
 }
 
@@ -139,7 +156,9 @@ bool CAppConfig::ReadTextFile(LPCTSTR szPath, CString& content) const
 bool CAppConfig::WriteTextFile(LPCTSTR szPath, const CString& content) const
 {
 	CFile file;
-	if (!file.Open(szPath, CFile::modeCreate | CFile::modeWrite | CFile::typeBinary | CFile::shareExclusive))
+	// 用 shareDenyNone 而非 shareExclusive：用户常常开着记事本查看 ini 后再点保存，
+	// 独占模式会导致写入直接失败且难以察觉
+	if (!file.Open(szPath, CFile::modeCreate | CFile::modeWrite | CFile::typeBinary | CFile::shareDenyNone))
 		return false;
 
 	const BYTE bom[2] = { 0xFF, 0xFE };
@@ -494,11 +513,13 @@ bool CAppConfig::SetActiveProfile(LPCTSTR szName)
 
 bool CAppConfig::IsAutoSwitchEnabled() const
 {
-	return m_bAutoSwitch;
+	// 分辨率按目标 exe 隔离已改为内置常开行为，不再受开关控制
+	return true;
 }
 
 void CAppConfig::SetAutoSwitchEnabled(bool bEnable)
 {
+	// 保留字段以兼容 ini 中的 AutoSwitch 键；行为上已恒为开启
 	m_bAutoSwitch = bEnable;
 }
 
@@ -517,11 +538,25 @@ CString CAppConfig::MatchProfileByProcess(LPCTSTR szProcess) const
 
 bool CAppConfig::SaveProfile(LPCTSTR szName, LPCTSTR szProcess, const std::vector<CSize>& resolutions)
 {
-	if (szName == nullptr || szName[0] == _T('\0'))
-		return false;
+	// 档案名缺省时用绑定的第一个进程名兜底：调用方只需给出「当前目标进程」，
+	// 无需了解「档案」概念，即可让每个 exe 各自拥有独立的 [Profile:xxx] 节
+	CString szActualName = (szName != nullptr) ? CString(szName) : CString();
+	szActualName.Trim();
+	if (szActualName.IsEmpty())
+	{
+		CString szProc = (szProcess != nullptr) ? CString(szProcess) : CString();
+		szProc.Trim();
+		int nComma = szProc.Find(_T(','));
+		if (nComma > 0)
+			szProc = szProc.Left(nComma);   // 多进程绑定时取第一个作为节名
+		szProc.Trim();
+		if (szProc.IsEmpty())
+			return false;
+		szActualName = szProc;
+	}
 
 	RESOLUTION_PROFILE prof;
-	prof.szName = szName;
+	prof.szName = szActualName;
 	prof.szProcess = (szProcess != nullptr) ? szProcess : _T("");
 	prof.resolutions = resolutions;
 	NormalizeResolutions(prof);

@@ -60,6 +60,7 @@ private:
 	/// 整屏压暗、目标窗口矩形挖空（保持原亮度）、并绘制橙色描边。
 	void RedrawMask();
 
+	bool   m_bLButtonWasDown{ false }; ///< 上次轮询时左键是否按下，用于取「按下沿」
 	HWND   m_hTarget { nullptr };   ///< 当前凸显的目标窗口
 	CWnd*  m_pSink   { nullptr };   ///< 结果接收方（主对话框）
 	HWND   m_hSinkWnd{ nullptr };   ///< 结果接收方窗口句柄，用于排除自身程序

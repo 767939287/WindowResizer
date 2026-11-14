@@ -59,11 +59,9 @@ private:
 	CComboBox m_comboResolution;
 	CStatic m_staticResLabel;    //“设置为主流分辨率”标签
 
-	// 资源文件中已声明的三态口径与分辨率档案控件
+	// 资源文件中已声明的三态口径与分辨率控件
 	CComboBox m_comboSizeMode;   ///< 尺寸口径下拉框（下标与 SizeMode 枚举一一对应）
-	CComboBox m_comboProfile;    ///< 分辨率档案下拉框
-	CButton m_checkAutoSwitch;   ///< 「按进程自动切换」复选框
-	CButton m_btnSaveProfile;    ///< 「保存为档案」按钮
+	CButton m_btnSaveProfile;    ///< 「保存到当前程序」按钮
 	CStatic m_staticViewportInfo;///< 浏览器视口测量结果文本
 
 	// 从指定窗口获取到的一些原始数据，不会被修改
@@ -148,8 +146,8 @@ private:
 	/// 重新填充分辨率下拉框（先清空），数据来自当前档案。
 	void RefreshResolutionCombo();
 
-	/// 重新填充档案下拉框并选中当前激活档案。
-	void RefreshProfileCombo();
+	/// 按当前目标窗口的进程名匹配并激活对应档案；无匹配时回落到默认档案。
+	void ResolveProfileForTarget();
 
 	/// 按实测值刷新「浏览器视口测量」区的文本。
 	void UpdateViewportInfoShow();
@@ -183,8 +181,6 @@ public:
 	afx_msg void OnBnClickedCheckDpi100Set();
 	afx_msg void OnCbnSelchangeComboResolution();
 	afx_msg void OnCbnSelchangeComboSizeMode();
-	afx_msg void OnCbnSelchangeComboProfile();
-	afx_msg void OnBnClickedCheckAutoswitch();
 	afx_msg void OnBnClickedButtonSaveProfile();
 	afx_msg LRESULT OnOverlayPickWindow(WPARAM wParam, LPARAM lParam);
 };

@@ -43,10 +43,13 @@ public:
 	bool SetActiveProfile(LPCTSTR szName);
 
 	/// 是否启用「按进程自动切换档案」。
+	/// 现已改为内置常开：分辨率按目标 exe 隔离，不再提供开关。
+	/// @return 恒为 true。
 	bool IsAutoSwitchEnabled() const;
 
 	/// 设置自动切换开关，仅改内存，不写盘。
 	/// @param bEnable true 表示启用。
+	/// @note 该状态已不再影响行为（自动切换恒开），保留仅为 ini 字段兼容。
 	void SetAutoSwitchEnabled(bool bEnable);
 
 	/// 按进程映像名在全部档案中查找匹配项（大小写不敏感，支持逗号分隔的多进程）。
@@ -55,13 +58,15 @@ public:
 	CString MatchProfileByProcess(LPCTSTR szProcess) const;
 
 	/// 新增或覆盖一套档案，并立即写盘。
-	/// @param szName 档案名，同名即覆盖。
-	/// @param szProcess 绑定的进程映像名，可为空串。
+	/// @param szName 档案名，同名即覆盖；传空串时自动以 szProcess 的第一个进程名作为节名，
+	///               从而让每个目标 exe 各自拥有独立的 [Profile:xxx] 节。
+	/// @param szProcess 绑定的进程映像名，可为空串；szName 为空时此项不能为空。
 	/// @param resolutions 分辨率列表，内部会做合法性校验、去重、按宽度升序排序。
-	/// @return true 表示写盘成功。
+	/// @return true 表示写盘成功；szName 与 szProcess 均为空、或列表归一化后为空时返回 false。
 	bool SaveProfile(LPCTSTR szName, LPCTSTR szProcess, const std::vector<CSize>& resolutions);
 
-	/// 取配置文件绝对路径（exe 目录 + WindowResizer.ini）。
+	/// 取配置文件绝对路径（%APPDATA%\WindowResizer\WindowResizer.ini）。
+	/// 目录不存在时自动创建；%APPDATA% 不可用时回退到 exe 同目录。
 	static CString GetIniPath();
 
 private:
@@ -88,5 +93,5 @@ private:
 
 	std::vector<RESOLUTION_PROFILE> m_profiles;  ///< 全部档案
 	CString m_szActiveProfile;                   ///< 当前激活档案名
-	bool m_bAutoSwitch;                          ///< 是否按进程自动切换档案，默认 false
+	bool m_bAutoSwitch;                          ///< 按进程自动切换的持久化状态；行为上恒为开启，仅用于 ini 字段兼容
 };

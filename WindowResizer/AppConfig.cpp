@@ -12,16 +12,14 @@
 
 namespace
 {
-	// 内置默认分辨率列表（宽度升序、宽度相同按高度升序），与旧版硬编码列表保持一致
-	const TCHAR* const kDefaultResolutions[] = {
+	// 内置主流分辨率：仅用于填充「主流分辨率」下拉框，**不写入 ini**。
+	// ini 中的 ResolutionN 只保存用户自定义的项。
+	const TCHAR* const kBuiltinResolutions[] = {
 		_T("640x480"),   _T("800x600"),   _T("1024x768"),  _T("1152x864"),
 		_T("1280x720"),  _T("1280x800"),  _T("1280x960"),  _T("1280x1024"),
 		_T("1366x768"),  _T("1400x1050"), _T("1440x900"),  _T("1600x900"),
 		_T("1600x1200"), _T("1680x1050"), _T("1920x1080"), _T("1920x1200"),
-		_T("2048x1536"), _T("2560x1080"), _T("2560x1440"), _T("2560x1600"),
-		_T("2880x1800"), _T("3200x1800"), _T("3440x1440"), _T("3840x1600"),
-		_T("3840x2160"), _T("3840x2400"), _T("5120x2160"), _T("5120x2880"),
-		_T("7680x4320")
+		_T("2048x1536"), _T("2560x1440"), _T("2560x1600"), _T("3840x2160")
 	};
 
 	// 内置默认档案名（中英文界面上都用同一个名字，避免语言切换后找不到档案）
@@ -208,8 +206,12 @@ bool CAppConfig::ParseResolution(LPCTSTR szText, CSize& size) const
 
 	int nW = _ttoi(szW);
 	int nH = _ttoi(szH);
-	// 上限按 8K 分辨率留余量，防止误填超大数值把目标窗口搞坏
-	if (nW <= 0 || nH <= 0 || nW > 16384 || nH > 16384)
+
+	// 上限取当前显示器分辨率，而不是写死的 16384：
+	// 超过屏幕的分辨率没有实际意义，也容易把目标窗口搞坏
+	const int nMaxW = ::GetSystemMetrics(SM_CXSCREEN);
+	const int nMaxH = ::GetSystemMetrics(SM_CYSCREEN);
+	if (nW <= 0 || nH <= 0 || nW > nMaxW || nH > nMaxH)
 		return false;
 
 	size.cx = nW;
@@ -224,8 +226,12 @@ void CAppConfig::NormalizeResolutions(RESOLUTION_PROFILE& profile) const
 	for (size_t i = 0; i < profile.resolutions.size(); ++i)
 	{
 		const CSize& s = profile.resolutions[i];
-		if (s.cx <= 0 || s.cy <= 0 || s.cx > 16384 || s.cy > 16384)
+		// 上限与 ParseResolution 保持一致：超过当前显示器分辨率的项视为无效
+		if (s.cx <= 0 || s.cy <= 0 ||
+			s.cx > ::GetSystemMetrics(SM_CXSCREEN) || s.cy > ::GetSystemMetrics(SM_CYSCREEN))
+		{
 			continue;
+		}
 
 		bool bDup = false;
 		for (size_t j = 0; j < result.size(); ++j)
@@ -257,18 +263,10 @@ void CAppConfig::LoadDefaults()
 	m_szActiveProfile = kDefaultProfileName;
 	m_bAutoSwitch = false;
 
+	// 内置主流分辨率不再预置到档案中：ini 只保存用户自定义的分辨率，
+	// 首次运行时列表为空，由用户按需添加
 	RESOLUTION_PROFILE prof;
 	prof.szName = kDefaultProfileName;
-	prof.szProcess.Empty();
-
-	for (int i = 0; i < _countof(kDefaultResolutions); ++i)
-	{
-		CSize sz;
-		if (ParseResolution(kDefaultResolutions[i], sz))
-			prof.resolutions.push_back(sz);
-	}
-	NormalizeResolutions(prof);
-
 	m_profiles.push_back(prof);
 }
 
@@ -432,17 +430,10 @@ bool CAppConfig::Load()
 		}
 	}
 
-	// 归一化并按有效性过滤
+	// 归一化各档案；列表为空是合法状态，表示用户尚未添加自定义分辨率，
+	// 因此不能像旧版那样把 resolutions 为空的档案过滤掉（否则下次启动会把 ini 判为无效并重建）
 	for (size_t i = 0; i < m_profiles.size(); ++i)
 		NormalizeResolutions(m_profiles[i]);
-
-	std::vector<RESOLUTION_PROFILE> validProfiles;
-	for (size_t i = 0; i < m_profiles.size(); ++i)
-	{
-		if (!m_profiles[i].resolutions.empty())
-			validProfiles.push_back(m_profiles[i]);
-	}
-	m_profiles.swap(validProfiles);
 
 	if (!bSawProfileSection || m_profiles.empty())
 	{
@@ -493,6 +484,40 @@ std::vector<CString> CAppConfig::GetProfileNames() const
 	for (size_t i = 0; i < m_profiles.size(); ++i)
 		names.push_back(m_profiles[i].szName);
 	return names;
+}
+
+/// 解析内置主流分辨率表；超过当前显示器分辨率的项会被跳过。
+std::vector<CSize> CAppConfig::GetBuiltinResolutions()
+{
+	std::vector<CSize> result;
+	const int nMaxW = ::GetSystemMetrics(SM_CXSCREEN);
+	const int nMaxH = ::GetSystemMetrics(SM_CYSCREEN);
+
+	for (int i = 0; i < _countof(kBuiltinResolutions); ++i)
+	{
+		CString szText(kBuiltinResolutions[i]);
+		int nPos = szText.Find(_T('x'));
+		if (nPos <= 0)
+			continue;
+
+		const int nW = _ttoi(szText.Left(nPos));
+		const int nH = _ttoi(szText.Mid(nPos + 1));
+
+		// 超过屏幕的分辨率没有实际意义，直接跳过，与 ParseResolution 的上限口径保持一致
+		if (nW <= 0 || nH <= 0 || nW > nMaxW || nH > nMaxH)
+			continue;
+
+		result.push_back(CSize(nW, nH));
+	}
+
+	std::stable_sort(result.begin(), result.end(), [](const CSize& a, const CSize& b)
+	{
+		if (a.cx != b.cx)
+			return a.cx < b.cx;
+		return a.cy < b.cy;
+	});
+
+	return result;
 }
 
 bool CAppConfig::SetActiveProfile(LPCTSTR szName)
@@ -561,9 +586,7 @@ bool CAppConfig::SaveProfile(LPCTSTR szName, LPCTSTR szProcess, const std::vecto
 	prof.resolutions = resolutions;
 	NormalizeResolutions(prof);
 
-	// 归一化后若一条都不剩，说明调用方传入了非法数据，直接拒绝以免写坏配置
-	if (prof.resolutions.empty())
-		return false;
+	// 归一化后允许为空：用户可能只是新建了一套还没有分辨率列表的档案
 
 	bool bReplaced = false;
 	for (size_t i = 0; i < m_profiles.size(); ++i)

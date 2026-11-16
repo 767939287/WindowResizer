@@ -52,12 +52,14 @@ private:
 	CEdit m_editSetHeight;
 		CEdit m_editSetPercentage;
 
-	// 运行时动态创建的控件
-	CStatic m_staticDpiInfo;
+	// 已改为在资源模板中声明的控件（设计器可见）
+	CStatic m_staticDpiInfo;     //“窗口数据”区的当前缩放提示
 	CButton m_checkDpiView;      //“窗口数据”区的100% DPI开关，仅控制显示
 	CButton m_checkDpiSet;       //“设置大小”区的100% DPI开关，控制输入与设置
-	CComboBox m_comboResolution;
-	CStatic m_staticResLabel;    //“设置为主流分辨率”标签
+	CComboBox m_comboResolution; //「主流分辨率」下拉框（内置常量，不写 ini）
+	CStatic m_staticResLabel;    //「主流分辨率」标签
+	CComboBox m_comboCustom;     //「自定义分辨率」下拉框（当前 exe 档案）
+	CStatic m_staticCustomLabel; //「自定义分辨率」标签
 
 	// 资源文件中已声明的三态口径与分辨率控件
 	CComboBox m_comboSizeMode;   ///< 尺寸口径下拉框（下标与 SizeMode 枚举一一对应）
@@ -143,8 +145,18 @@ private:
 	/// 根据当前目标窗口是否为 Chromium，决定「浏览器视口」项是否可选择。
 	void UpdateViewportModeAvailability();
 
-	/// 重新填充分辨率下拉框（先清空），数据来自当前档案。
+	/// 重新填充两个维护分辨率下拉框（主流 + 自定义）。
 	void RefreshResolutionCombo();
+
+	/// 填充「主流分辨率」下拉框：数据来自内置常量表，与 ini 无关。
+	void RefreshBuiltinCombo();
+
+	/// 填充「自定义分辨率」下拉框：数据来自当前目标 exe 的档案，同时刷新 m_currentResolutions。
+	void RefreshCustomCombo();
+
+	/// 把下拉框中选中的 "宽x高" 文本填入「修改大小」的宽高输入框。
+	/// @param combo 触发事件的下拉框（主流或自定义）。
+	void FillSizeFromCombo(CComboBox& combo);
 
 	/// 按当前目标窗口的进程名匹配并激活对应档案；无匹配时回落到默认档案。
 	void ResolveProfileForTarget();
@@ -180,6 +192,7 @@ public:
 	afx_msg void OnBnClickedCheckDpi100View();
 	afx_msg void OnBnClickedCheckDpi100Set();
 	afx_msg void OnCbnSelchangeComboResolution();
+	afx_msg void OnCbnSelchangeComboCustom();
 	afx_msg void OnCbnSelchangeComboSizeMode();
 	afx_msg void OnBnClickedButtonSaveProfile();
 	afx_msg LRESULT OnOverlayPickWindow(WPARAM wParam, LPARAM lParam);

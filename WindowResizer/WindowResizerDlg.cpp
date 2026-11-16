@@ -73,6 +73,13 @@ void CWindowResizerDlg::DoDataExchange(CDataExchange* pDX)
 	DDX_Control(pDX, IDC_COMBO_SIZE_MODE, m_comboSizeMode);
 	DDX_Control(pDX, IDC_BUTTON_SAVE_PROFILE, m_btnSaveProfile);
 	DDX_Control(pDX, IDC_STATIC_VIEWPORT_INFO, m_staticViewportInfo);
+	DDX_Control(pDX, IDC_STATIC_DPIINFO, m_staticDpiInfo);
+	DDX_Control(pDX, IDC_CHECK_DPI100_VIEW, m_checkDpiView);
+	DDX_Control(pDX, IDC_CHECK_DPI100_SET, m_checkDpiSet);
+	DDX_Control(pDX, IDC_STATIC_RESOLUTION_LABEL, m_staticResLabel);
+	DDX_Control(pDX, IDC_COMBO_RESOLUTION, m_comboResolution);
+	DDX_Control(pDX, IDC_STATIC_CUSTOM_LABEL, m_staticCustomLabel);
+	DDX_Control(pDX, IDC_COMBO_CUSTOM, m_comboCustom);
 	DDX_Radio(pDX, IDC_RADIO_50, m_nRadioSelect);
 }
 
@@ -97,6 +104,7 @@ BEGIN_MESSAGE_MAP(CWindowResizerDlg, CDialogEx)
 	ON_BN_CLICKED(IDC_CHECK_DPI100_VIEW, &CWindowResizerDlg::OnBnClickedCheckDpi100View)
 	ON_BN_CLICKED(IDC_CHECK_DPI100_SET, &CWindowResizerDlg::OnBnClickedCheckDpi100Set)
 	ON_CBN_SELCHANGE(IDC_COMBO_RESOLUTION, &CWindowResizerDlg::OnCbnSelchangeComboResolution)
+	ON_CBN_SELCHANGE(IDC_COMBO_CUSTOM, &CWindowResizerDlg::OnCbnSelchangeComboCustom)
 	ON_CBN_SELCHANGE(IDC_COMBO_SIZE_MODE, &CWindowResizerDlg::OnCbnSelchangeComboSizeMode)
 	ON_BN_CLICKED(IDC_BUTTON_SAVE_PROFILE, &CWindowResizerDlg::OnBnClickedButtonSaveProfile)
 	ON_MESSAGE(WM_PICKER_RESULT, &CWindowResizerDlg::OnOverlayPickWindow)
@@ -472,61 +480,32 @@ void CWindowResizerDlg::UpdateDpiInfoShow()
 //资源文件（UTF-16）不便直接编辑，故在此以代码创建，坐标使用对话框单位
 void CWindowResizerDlg::CreateDynamicControls()
 {
-	CRect rc;
-	CFont* pFont = GetFont();   //对话框字体，动态创建的控件需手动继承，否则字体大小不一致
+	CFont* pFont = GetFont();   //对话框字体，供下方英文排版自适应使用
 
-	//=================== “窗口数据”分组框 ===================
-	//“当前缩放”提示，放在“窗口数据”分组框底行左侧
-	rc.SetRect(18, 100, 80, 109);
-	MapDialogRect(&rc);
+	// 以下 5 个控件已改为在资源模板中声明（IDC_STATIC_DPIINFO / IDC_CHECK_DPI100_VIEW /
+	// IDC_CHECK_DPI100_SET / IDC_STATIC_RESOLUTION_LABEL / IDC_COMBO_RESOLUTION），
+	// 这里只负责填充随语言变化的文本；字体由对话框模板自动继承，无需手动 SetFont
 	CString szDpiInfoNone;
 	szDpiInfoNone.LoadString(IDS_DPI_INFO_NONE);
-	m_staticDpiInfo.Create(szDpiInfoNone,
-		WS_CHILD | WS_VISIBLE | SS_LEFT, rc, this, IDC_STATIC_DPIINFO);
-	if (pFont != nullptr)
-		m_staticDpiInfo.SetFont(pFont);
+	m_staticDpiInfo.SetWindowTextW(szDpiInfoNone);
 
-	//“窗口数据”区的100% DPI开关（仅控制显示），放在“窗口数据”分组框底行右侧
-	rc.SetRect(96, 99, 160, 110);
-	MapDialogRect(&rc);
 	CString szDpiView;
 	szDpiView.LoadString(IDS_DPI100_VIEW);
-	m_checkDpiView.Create(szDpiView,
-		WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX, rc, this, IDC_CHECK_DPI100_VIEW);
-	if (pFont != nullptr)
-		m_checkDpiView.SetFont(pFont);
+	m_checkDpiView.SetWindowTextW(szDpiView);
 
-	//=================== “设置大小”分组框 ===================
-	//“设置大小”区的100% DPI开关（控制输入与设置），放在“设置大小”框宽度编辑框右侧
-	rc.SetRect(110, 152, 164, 163);
-	MapDialogRect(&rc);
 	CString szDpiSet;
 	szDpiSet.LoadString(IDS_DPI100_SET);
-	m_checkDpiSet.Create(szDpiSet,
-		WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX, rc, this, IDC_CHECK_DPI100_SET);
-	if (pFont != nullptr)
-		m_checkDpiSet.SetFont(pFont);
+	m_checkDpiSet.SetWindowTextW(szDpiSet);
 
-	//“设置为主流分辨率”标签，放在“设置大小”分组框底行左侧
-	rc.SetRect(18, 210, 92, 219);
-	MapDialogRect(&rc);
 	CString szResLabel;
 	szResLabel.LoadString(IDS_RESOLUTION_LABEL);
-	m_staticResLabel.Create(szResLabel,
-		WS_CHILD | WS_VISIBLE | SS_LEFT, rc, this, IDC_STATIC_RESOLUTION_LABEL);
-	if (pFont != nullptr)
-		m_staticResLabel.SetFont(pFont);
+	m_staticResLabel.SetWindowTextW(szResLabel);
 
-	//主流分辨率下拉框，放在标签右侧
-	rc.SetRect(96, 209, 164, 264);
-	MapDialogRect(&rc);
-	m_comboResolution.Create(
-		WS_CHILD | WS_VISIBLE | WS_VSCROLL | WS_TABSTOP | CBS_DROPDOWNLIST,
-		rc, this, IDC_COMBO_RESOLUTION);
-	if (pFont != nullptr)
-		m_comboResolution.SetFont(pFont);
+	CString szCustomLabel;
+	szCustomLabel.LoadString(IDS_CUSTOM_LABEL);
+	m_staticCustomLabel.SetWindowTextW(szCustomLabel);
 
-	//初始化主流分辨率下拉框：数据来自 ini 配置的当前档案（内置默认项由 CAppConfig 生成）
+	//初始化主流分辨率下拉框：数据来自 ini 配置的当前档案
 	RefreshResolutionCombo();
 
 	//=================== 英文排版自适应 ===================
@@ -536,27 +515,33 @@ void CWindowResizerDlg::CreateDynamicControls()
 	{
 		CClientDC dc(this);
 		CFont* pOldFont = dc.SelectObject(pFont != nullptr ? pFont : GetFont());
-		// 对话框单位 96 换算成像素后，即标签允许扩展到的最大右边界（右侧需留给复选框/下拉框）
-		CRect rcLimit(0, 0, 96, 0);
-		MapDialogRect(&rcLimit);
+
+		// 标签右边界不写死具体数值，改为取同一行右侧相邻控件的实际左边界，
+		// 这样调整 .rc 布局后无需同步改代码
+		auto ExtendLabelRight = [&](CStatic& label, CWnd& neighbor, LPCTSTR szText)
+		{
+			CRect rcLabel;
+			label.GetWindowRect(&rcLabel);
+			ScreenToClient(&rcLabel);
+
+			CRect rcNeighbor;
+			neighbor.GetWindowRect(&rcNeighbor);
+			ScreenToClient(&rcNeighbor);
+
+			const int nWantRight = rcLabel.left + dc.GetTextExtent(szText).cx + 4;   // 文本宽 + 少量余量
+			if (nWantRight > rcLabel.right && nWantRight <= rcNeighbor.left)
+				label.SetWindowPos(nullptr, 0, 0, nWantRight - rcLabel.left, rcLabel.Height(),
+					SWP_NOMOVE | SWP_NOZORDER);
+		};
 
 		//“当前缩放”标签：右边界不得越过同行的“100% DPI”复选框
-		CRect rcDpi;
-		m_staticDpiInfo.GetWindowRect(&rcDpi);
-		ScreenToClient(&rcDpi);
-		int nWantRight = rcDpi.left + dc.GetTextExtent(szDpiInfoNone).cx + 4;   // 文本宽 + 少量余量
-		if (nWantRight > rcDpi.right && nWantRight <= rcLimit.right)
-			m_staticDpiInfo.SetWindowPos(nullptr, 0, 0, nWantRight - rcDpi.left, rcDpi.Height(),
-				SWP_NOMOVE | SWP_NOZORDER);
+		ExtendLabelRight(m_staticDpiInfo, m_checkDpiView, szDpiInfoNone);
 
-		//“设置为主流分辨率”标签：右边界不得越过右侧的分辨率下拉框
-		CRect rcRes;
-		m_staticResLabel.GetWindowRect(&rcRes);
-		ScreenToClient(&rcRes);
-		nWantRight = rcRes.left + dc.GetTextExtent(szResLabel).cx + 4;
-		if (nWantRight > rcRes.right && nWantRight <= rcLimit.right)
-			m_staticResLabel.SetWindowPos(nullptr, 0, 0, nWantRight - rcRes.left, rcRes.Height(),
-				SWP_NOMOVE | SWP_NOZORDER);
+		//“主流分辨率”标签：右边界不得越过右侧的主流分辨率下拉框
+		ExtendLabelRight(m_staticResLabel, m_comboResolution, szResLabel);
+
+		//“自定义分辨率”标签：右边界不得越过右侧的自定义分辨率下拉框
+		ExtendLabelRight(m_staticCustomLabel, m_comboCustom, szCustomLabel);
 
 		dc.SelectObject(pOldFont);
 	}
@@ -896,18 +881,31 @@ void CWindowResizerDlg::OnBnClickedCheckDpi100Set()
 //选择主流分辨率后，将其填入“设置大小”的宽度和高度
 void CWindowResizerDlg::OnCbnSelchangeComboResolution()
 {
-	int nSel = m_comboResolution.GetCurSel();
+	FillSizeFromCombo(m_comboResolution);
+}
+
+//选择自定义分辨率后，同样填入宽高输入框
+void CWindowResizerDlg::OnCbnSelchangeComboCustom()
+{
+	FillSizeFromCombo(m_comboCustom);
+}
+
+//把下拉框中选中的 "宽x高" 文本填入宽高输入框（两个下拉框共用）
+void CWindowResizerDlg::FillSizeFromCombo(CComboBox& combo)
+{
+	int nSel = combo.GetCurSel();
 	if (nSel == CB_ERR)
 		return;
+
 	CString szItem;
-	m_comboResolution.GetLBText(nSel, szItem);   //格式形如 "1920x1080"
+	combo.GetLBText(nSel, szItem);   //格式形如 "1920x1080"
 	int nSplit = szItem.Find(_T('x'));
 	if (nSplit <= 0)
 		return;
-	CString szWidth = szItem.Left(nSplit);
-	CString szHeight = szItem.Mid(nSplit + 1);
-	m_editSetWidth.SetWindowTextW(szWidth);
-	m_editSetHeight.SetWindowTextW(szHeight);
+
+	// 必须是半角小写 x 分隔：上面按它拆分宽高，与 AddString 时的格式约定一致
+	m_editSetWidth.SetWindowTextW(szItem.Left(nSplit));
+	m_editSetHeight.SetWindowTextW(szItem.Mid(nSplit + 1));
 }
 
 //切换尺寸口径：同步下拉框、刷新显示、按需调整「浏览器视口」项
@@ -965,13 +963,38 @@ void CWindowResizerDlg::UpdateViewportModeAvailability()
 	UpdateViewportInfoShow();
 }
 
-//重新填充分辨率下拉框
+//重新填充分辨率下拉框（主流 + 自定义）
 void CWindowResizerDlg::RefreshResolutionCombo()
+{
+	RefreshBuiltinCombo();
+	RefreshCustomCombo();
+}
+
+//填充「主流分辨率」：内置常量表，与 ini 无关
+void CWindowResizerDlg::RefreshBuiltinCombo()
 {
 	if (m_comboResolution.GetSafeHwnd() == NULL)
 		return;
 
 	m_comboResolution.ResetContent();
+	std::vector<CSize> items = CAppConfig::GetBuiltinResolutions();
+	for (size_t i = 0; i < items.size(); i++)
+	{
+		CString szItem;
+		// 必须是半角小写 x：FillSizeFromCombo 依赖它拆分宽高
+		szItem.Format(_T("%dx%d"), items[i].cx, items[i].cy);
+		m_comboResolution.AddString(szItem);
+	}
+	m_comboResolution.SetCurSel(-1);
+}
+
+//填充「自定义分辨率」：来自当前目标 exe 的档案，列表允许为空
+void CWindowResizerDlg::RefreshCustomCombo()
+{
+	if (m_comboCustom.GetSafeHwnd() == NULL)
+		return;
+
+	m_comboCustom.ResetContent();
 	m_currentResolutions.clear();
 
 	const RESOLUTION_PROFILE* pProfile = m_config.GetActiveProfile();
@@ -982,11 +1005,10 @@ void CWindowResizerDlg::RefreshResolutionCombo()
 	for (size_t i = 0; i < m_currentResolutions.size(); i++)
 	{
 		CString szItem;
-		// 必须是半角小写 x：OnCbnSelchangeComboResolution 依赖它拆分宽高
 		szItem.Format(_T("%dx%d"), m_currentResolutions[i].cx, m_currentResolutions[i].cy);
-		m_comboResolution.AddString(szItem);
+		m_comboCustom.AddString(szItem);
 	}
-	m_comboResolution.SetCurSel(-1);
+	m_comboCustom.SetCurSel(-1);
 }
 
 //按当前目标窗口的进程名匹配并激活对应档案；无匹配时回落到默认档案
@@ -1105,25 +1127,13 @@ void CWindowResizerDlg::OnBnClickedButtonSaveProfile()
 
 		CString szMsg;
 		szMsg.LoadString(IDS_PROFILE_SAVED);
-		szMsg += _T("\r\n");
-		szMsg += CAppConfig::GetIniPath();   // 让用户明确知道文件写到了哪里
 		::MessageBox(m_hWnd, szMsg, szCaption, MB_OK | MB_ICONINFORMATION);
 	}
 	else
 	{
+		// 空列表已是合法状态（用户可能尚未添加自定义分辨率），此处失败必为写盘问题
 		CString szMsg;
-		if (m_currentResolutions.empty())
-		{
-			// 分辨率列表为空时 SaveProfile 会直接拒绝，这与写盘失败是两回事，需分别提示
-			szMsg = _T("当前档案没有可保存的分辨率。\r\n")
-				_T("请检查 WindowResizer.ini 中该档案的 ResolutionN 项是否有效。");
-		}
-		else
-		{
-			szMsg.LoadString(IDS_ERR_INI_WRITE);
-			szMsg += _T("\r\n");
-			szMsg += CAppConfig::GetIniPath();   // 带出路径，便于排查占用或权限问题
-		}
+		szMsg.LoadString(IDS_ERR_INI_WRITE);
 		::MessageBox(m_hWnd, szMsg, szCaption, MB_OK | MB_ICONWARNING);
 	}
 }
@@ -1181,6 +1191,7 @@ void CWindowResizerDlg::IsEnableAllControls(bool bIsEnable)
 	m_checkDpiView.EnableWindow(bIsEnable);
 	m_checkDpiSet.EnableWindow(bIsEnable);
 	m_comboResolution.EnableWindow(bIsEnable);
+	m_comboCustom.EnableWindow(bIsEnable);       //未选中窗口时禁用自定义分辨率下拉框
 	m_comboSizeMode.EnableWindow(bIsEnable);     //未选中窗口时禁用尺寸口径下拉框
 	m_btnSaveProfile.EnableWindow(bIsEnable);    //未选中窗口时禁用保存按钮
 	SetMaxSizeButtonEnable();

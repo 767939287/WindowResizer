@@ -32,6 +32,8 @@
 #define IDC_COMBO_RESOLUTION            1022
 #define IDC_CHECK_DPI100_SET            1023
 #define IDC_STATIC_RESOLUTION_LABEL     1024
+#define IDC_STATIC_CUSTOM_LABEL         1025
+#define IDC_COMBO_CUSTOM                1033   // 注意：1026 撞 IDC_COMBO_SIZE_MODE、1029 撞 IDC_BUTTON_SAVE_PROFILE；1033 取自 _APS_NEXT_CONTROL_VALUE
 #define IDC_COMBO_SIZE_MODE             1026
 #define IDC_COMBO_PROFILE               1027
 #define IDC_CHECK_AUTOSWITCH            1028
@@ -43,6 +45,7 @@
 #define IDS_DPI_INFO_FORMAT             2001
 #define IDS_DPI_INFO_NONE               2002
 #define IDS_RESOLUTION_LABEL            2003
+#define IDS_CUSTOM_LABEL                2021
 #define IDS_DPI100_VIEW                 2004
 #define IDS_DPI100_SET                  2005
 #define IDS_MENU_LANGUAGE               2006
@@ -71,7 +74,7 @@
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        132
 #define _APS_NEXT_COMMAND_VALUE         32773
-#define _APS_NEXT_CONTROL_VALUE         1033
+#define _APS_NEXT_CONTROL_VALUE         1034
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

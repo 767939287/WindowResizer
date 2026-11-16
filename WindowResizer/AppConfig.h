@@ -37,6 +37,11 @@ public:
 	/// 取全部档案名，用于填充档案下拉框。
 	std::vector<CString> GetProfileNames() const;
 
+	/// 取内置主流分辨率列表（仅内存，不写 ini）。
+	/// 已按当前显示器分辨率过滤，并按宽度升序排序，供「主流分辨率」下拉框使用。
+	/// @return 可用的内置分辨率列表。
+	static std::vector<CSize> GetBuiltinResolutions();
+
 	/// 设置当前激活档案，仅改内存，不写盘。
 	/// @param szName 档案名，必须与已有档案名精确匹配。
 	/// @return true 表示匹配成功。
